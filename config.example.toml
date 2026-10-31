@@ -1,0 +1,54 @@
+# Copia questo file in config.toml (ignorato da git) e adatta i valori.
+
+[panel]
+# Risoluzione nativa del Kindle 4/Touch (K4 platform): 600x800.
+width = 600
+height = 800
+# Cadenza di aggiornamento lato device (usata dallo script dell'estensione KUAL).
+refresh_minutes = 5
+
+[location]
+name = "Genova"
+latitude = 44.4072
+longitude = 8.9476
+
+[weather]
+days = 3
+timezone = "Europe/Rome"
+
+[calendar]
+# Google Calendar > Impostazioni calendario > "Indirizzo segreto in formato iCal".
+# Vuoto = riquadro calendario non configurato. Si può fornire anche via KDASH_ICS_URL.
+ics_url = ""
+max_events = 4
+days_ahead = 7
+
+[trains]
+base_url = "https://api.transitous.org"
+# Partenze mostrate: la stazione di partenza (una sola per pannello).
+station = "Genova Brignole"
+# Ottieni lo stop_id con:
+#   python -m kindle_dashboard resolve-station "Genova Brignole"
+stop_id = "it-trenitalia_04702"
+max_departures = 4
+# Vuoto = tutte le destinazioni. Altrimenti filtra per sottostringa (case-insensitive).
+destinations = []
+# Seconda riga per treno con le fermate intermedie che corrispondono a `destinations`, con orario.
+# Costa una richiesta HTTP per treno mostrato.
+stop_details = false
+# Fermate da non sacrificare quando la riga non basta (il resto viene ridotto).
+stop_priority = []
+
+[render]
+# Percorsi TTF opzionali. Vuoto = il primo font disponibile di sistema
+# (Segoe UI Semibold / Segoe UI / Arial Bold / Verdana Bold).
+font = ""
+font_bold = ""
+
+[server]
+host = "0.0.0.0"
+port = 8787
+cache_ttl_seconds = 90
+
+[cache]
+dir = "cache"

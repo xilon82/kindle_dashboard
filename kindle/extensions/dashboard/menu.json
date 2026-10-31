@@ -1,0 +1,32 @@
+{
+	"items": [
+		{
+			"name": "Verifica server",
+			"priority": 1,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "check",
+			"internal": "status Prova di raggiungibilita' del PC"
+		},
+		{
+			"name": "Diagnostica",
+			"priority": 2,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "diag",
+			"internal": "status Raccolta informazioni sul device"
+		},
+		{
+			"name": "Tieni schermo acceso",
+			"priority": 3,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "awake",
+			"internal": "status Disattivo il salvascherino"
+		},
+		{
+			"name": "Riattiva salvascherino",
+			"priority": 4,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "sleep",
+			"internal": "status Riattivo il salvascherino"
+		}
+	]
+}

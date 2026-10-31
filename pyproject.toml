@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kindle-dashboard"
+version = "0.1.0"
+description = "Weather, Google Calendar and train departures rendered as a PNG for a jailbroken Kindle panel"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pillow>=10.1",
+  # Windows non include il database IANA: senza questo, zoneinfo.ZoneInfo("Europe/Rome") fallisce.
+  "tzdata>=2024.1",
+]
+
+[project.scripts]
+kindle-dashboard = "kindle_dashboard.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["kindle_dashboard*"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

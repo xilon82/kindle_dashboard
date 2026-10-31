@@ -1,0 +1,20 @@
+[
+  {
+    "type": "STOP",
+    "name": "GENOVA BRIGNOLE",
+    "id": "it-trenitalia_04702:station",
+    "lat": 44.4072,
+    "lon": 8.9476,
+    "country": "IT",
+    "tz": "Europe/Rome"
+  },
+  {
+    "type": "STOP",
+    "name": "GENOVA PIAZZA PRINCIPE",
+    "id": "it-trenitalia_04700:station",
+    "lat": 44.4156,
+    "lon": 8.9216,
+    "country": "IT",
+    "tz": "Europe/Rome"
+  }
+]

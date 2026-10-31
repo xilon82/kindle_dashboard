@@ -1,0 +1,88 @@
+{
+  "nextPageCursor": "LATER|1793467140",
+  "previousPageCursor": "EARLIER|1793466060",
+  "place": {
+    "name": "GENOVA BRIGNOLE",
+    "stopId": "it-trenitalia_04702:station",
+    "tz": "Europe/Rome"
+  },
+  "stopTimes": [
+    {
+      "mode": "LONG_DISTANCE",
+      "realTime": true,
+      "headsign": "LIVORNO CENTRALE",
+      "displayName": "IC 673",
+      "routeShortName": "IC 673",
+      "cancelled": false,
+      "tripCancelled": false,
+      "place": {
+        "name": "GENOVA BRIGNOLE",
+        "stopId": "it-trenitalia_04702",
+        "tz": "Europe/Rome",
+        "departure": "2026-10-31T17:10:00Z",
+        "scheduledDeparture": "2026-10-31T17:08:00Z",
+        "track": "9",
+        "cancelled": false,
+        "departureTimestampReason": "OBSERVED"
+      },
+      "tripTo": { "name": "LIVORNO CENTRALE", "stopId": "it-trenitalia_06725" }
+    },
+    {
+      "mode": "REGIONAL_RAIL",
+      "realTime": false,
+      "headsign": "TORINO PORTA NUOVA",
+      "displayName": "RV 2140",
+      "routeShortName": "RV 2140",
+      "cancelled": false,
+      "tripCancelled": false,
+      "place": {
+        "name": "GENOVA BRIGNOLE",
+        "stopId": "it-trenitalia_04702",
+        "tz": "Europe/Rome",
+        "departure": "2026-10-31T17:30:00Z",
+        "scheduledDeparture": "2026-10-31T17:30:00Z",
+        "track": "11",
+        "cancelled": false,
+        "departureTimestampReason": "NO_RT_DATA"
+      },
+      "tripTo": { "name": "TORINO PORTA NUOVA", "stopId": "it-trenitalia_00219" }
+    },
+    {
+      "mode": "REGIONAL_RAIL",
+      "realTime": false,
+      "headsign": "ACQUI TERME",
+      "displayName": "REG 12138",
+      "routeShortName": "REG 12138",
+      "cancelled": false,
+      "tripCancelled": true,
+      "place": {
+        "name": "GENOVA BRIGNOLE",
+        "stopId": "it-trenitalia_04702",
+        "tz": "Europe/Rome",
+        "departure": "2026-10-31T17:45:00Z",
+        "scheduledDeparture": "2026-10-31T17:45:00Z",
+        "track": "1 TRONCO",
+        "cancelled": true,
+        "departureTimestampReason": "NO_RT_DATA"
+      },
+      "tripTo": { "name": "ACQUI TERME", "stopId": "it-trenitalia_00867" }
+    },
+    {
+      "mode": "REGIONAL_RAIL",
+      "realTime": false,
+      "headsign": "SAVONA",
+      "displayName": "REG 12001",
+      "place": {
+        "name": "GENOVA BRIGNOLE",
+        "stopId": "it-trenitalia_04702",
+        "tz": "Europe/Rome",
+        "departure": "2026-10-31T15:00:00Z",
+        "scheduledDeparture": "2026-10-31T15:00:00Z",
+        "track": "5",
+        "cancelled": false,
+        "departureTimestampReason": "NO_RT_DATA"
+      },
+      "tripTo": { "name": "SAVONA", "stopId": "it-trenitalia_00651" }
+    }
+  ]
+}

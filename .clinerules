@@ -1,0 +1,120 @@
+# Regole operative — kindle-dashboard
+
+> I vincoli operativi per chi scrive codice stanno **qui**.
+> La mappa tecnica (architettura, invarianti, come estendere) è in `AGENTS.md`.
+> La documentazione per chi usa il pannello è in `README.md`.
+
+## §Progetto
+
+Genera un PNG 600x800 (meteo, Google Calendar, partenze treni) servito via HTTP a un Kindle
+jailbroken che lo disegna con FBInk. Nessuna API key: Open-Meteo + Transitous; Pillow disegna.
+
+```
+kindle_dashboard/
+  __main__.py        CLI: render | serve | resolve-station
+  config.py          config.toml (tomllib) e validazione
+  model.py           dataclass immutabili condivise
+  collect.py         orchestrazione + fallback su cache per sezione
+  cache.py           ultimo payload buono su disco
+  server.py          HTTP stdlib: /panel.png, /health
+  exceptions.py      SourceError, ConfigError
+  timezone_utils.py  unico punto che crea un ZoneInfo
+  sources/           http.py, weather.py, calendar.py, trains.py (fetch_payload + parse)
+  render/            fonts.py, icons.py, layout.py, panel.py
+kindle/              estensione KUAL + deploy.ps1 (lato device)
+tests/               pytest con fixture registrate, zero rete
+```
+
+| Scopo | Comando esatto |
+|---|---|
+| install | `python -m pip install -e .` |
+| lint | `python -m ruff check .` |
+| test | `python -m pytest -q` |
+| run (anteprima) | `python -m kindle_dashboard render -o preview.png` |
+| run (server) | `python -m kindle_dashboard serve` |
+| deploy device | `.\kindle\deploy.ps1` (`-DryRun` per provare) |
+
+## §Stile
+
+- Python 3.11+ con `from __future__ import annotations` e type hints sulle funzioni pubbliche.
+- `pathlib.Path` per i percorsi; encoding esplicito (`utf-8`, `utf-8-sig` in lettura di JSON e cache).
+- Docstring e commenti in italiano; il commento spiega il *perché*, non il *cosa*.
+- Identificatori e messaggi di commit in inglese.
+- `except` mirati (`SourceError`, `OSError`, `tomllib.TOMLDecodeError`); mai `except:` nudo.
+- Ogni `# noqa` ha accanto la motivazione; se la regola non è attiva, il noqa va rimosso.
+- Dipendenze ammesse: stdlib + `pillow` + `tzdata`. Una dipendenza nuova richiede una ragione scritta
+  nel `pyproject.toml`.
+- Niente codice morto: una funzione non usata né testata si cancella.
+
+## §Regole apprese
+
+Errori realmente accaduti qui, da non ripetere:
+
+1. **`zoneinfo` su Windows fallisce** (`ZoneInfoNotFoundError: 'Europe/Rome'`): serve `tzdata`, già
+   dichiarato. Non creare `ZoneInfo` fuori da `timezone_utils.zone()`.
+2. **pytest non trova il package** senza installazione: `pythonpath = ["."]` in
+   `[tool.pytest.ini_options]` è necessario, non rimuoverlo.
+3. **`Get-Content -Raw` in PowerShell 5.1 legge UTF-8 come ANSI**: per gli script del Kindle usare
+   `[System.IO.File]::ReadAllText(path, [System.Text.Encoding]::UTF8)` (altrimenti gli accenti si
+   corrompono) e scrivere UTF-8 **senza BOM** con line ending **LF**: `sh` non tollera `\r`.
+4. **ViaggiaTreno non è utilizzabile**: `partenze/...` risponde 301→400 con cookie `ak_bmsc`
+   (Akamai Bot Manager). Non reintrodurlo: i treni arrivano da Transitous.
+5. **Le colonne del layout non si dimensionano a occhio**: larghezze fisse sovrapponevano ora e nome
+   del treno nel PNG. Misura con `font.getlength(...)`.
+6. **Le fonti si testano solo con fixture registrate** e `monkeypatch` di `fetch_payload`: i test non
+   chiamano la rete, altrimenti diventano lenti e intermittenti.
+7. **Il profilo di rete Windows conta più della regola firewall**: sulla macchina di sviluppo la rete
+   è classificata `Public`, dove una regola `-Profile Private` non si applica (il Kindle non
+   raggiunge il PC). Prima di dichiarare "firewall a posto" controlla `Get-NetConnectionProfile` e
+   l'elevazione della shell (`admin: False` in questa sessione: niente `New-NetFirewallRule`).
+8. **Il Kindle 4 non ha radio 5 GHz**: se il PC è su un SSID 5 GHz, il test device→PC fallisce senza
+   alcun errore utile. Verificare prima il band dello SSID.
+9. **I cmdlet PowerShell non esistono in `cmd.exe`**: incollare `Set-NetConnectionProfile` in un
+   prompt `cmd` produce "non è riconosciuto come comando". Per le operazioni di setup fornire sempre
+   uno script `.ps1` con controllo di elevazione (es. `kindle\allow-lan.ps1`) invece di righe da
+   incollare, che vengono anche concatenate quando si perdono gli a capo.
+10. **`... | Select-Object -First N` interrompe lo script a monte**: usato su `deploy.ps1` ha chiuso
+    la pipeline dopo la riga N, saltando la copia dei file e facendo sembrare il deploy riuscito.
+    Per gli script con effetti collaterali non filtrare l'output; al massimo redirigere a `$null`.
+11. **Il `fbink` incluso in KOReader è compilato MINIMAL** (`[FBInk] Image support is disabled in
+    this FBInk build!`): non può disegnare PNG.
+12. **`eips` non mostra immagini su questo firmware**: sta in `/usr/sbin/eips` (non `/usr/bin`) e con
+    PNG in grigi, RGB, 1-bit e JPEG lo schermo resta bianco, pur restituendo exit code 0. Il codice
+    di uscita non è una prova che l'immagine sia stata disegnata.
+13. **Fermare il framework non è una scorciatoia**: `/etc/init.d/framework stop` libera lo schermo
+    ma porta a schermo bianco, unità USB non più esposta (quindi nessun file `STOP` raggiungibile) e
+    riavvio del device. La visualizzazione passa dal browser (`/panel.html`), non dal framebuffer.
+14. **Un `pid` file orfano blocca l'avvio per sempre**: se un ciclo scrive `dashboard.pid` e controlla
+    solo l'esistenza del file, dopo un kill o un mount USB la voce di menu risponde "gia' in
+    esecuzione" e non fa nulla. Va verificata la liveness con `kill -0`.
+15. **Un `serve` già in ascolto fa fallire in silenzio il riavvio**: con più processi `python -m
+    kindle_dashboard serve` avviati nel tempo il bind della porta fallisce, resta attiva l'istanza
+    vecchia e sembra che le modifiche "non abbiano effetto". Prima di dire "riavviato" controllare
+    `Get-NetTCPConnection -LocalPort 8787 -State Listen` e il PID che risponde.
+16. **I browser mobili ignorano `Cache-Control: no-store` su un `<img>` con URL fisso**: l'HTML deve
+    referenziare `/panel.png?t=<epoch>`, altrimenti si continua a vedere il pannello vecchio.
+
+## §Workflow
+
+- Gate obbligatorio prima del commit: `python -m ruff check .` **e** `python -m pytest -q`, verdi.
+- **Mai `git commit` né `git push` senza conferma esplicita**: prima mostra `git status --short` e il
+  messaggio proposto, poi attendi l'ok. Un'autorizzazione vale per quel commit, non per sempre.
+- Messaggi: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
+- Non creare commit "di servizio" per far passare il linter: prima si sistema, poi si chiede.
+- Non scrivere sul Kindle (`G:\`) senza motivo: durante lo sviluppo solo `deploy.ps1 -DryRun`.
+- Dopo una modifica al layout rigenera `preview.png` e **guardalo**: i difetti visivi non li vede ruff.
+
+## §Dove va una lezione nuova
+
+| Tipo di lezione | Dove |
+|---|---|
+| Vincolo operativo, errore da non ripetere, policy | `.clinerules` (qui) |
+| Architettura, invarianti, come estendere, mappa dei test | `AGENTS.md` |
+| Uso, configurazione, troubleshooting per l'utente | `README.md` |
+| Perché di una scelta puntuale di codice | commento nel codice |
+
+Niente changelog: scrivi la regola riutilizzabile, non il diario delle modifiche.
+
+**Regola globale o locale?** Test: "falsa in un altro progetto → qui; vera ovunque → regole globali
+di Cline (`~/.cline/rules`)". Esempio: "mai commit senza conferma" è globale; "il PNG deve essere
+600x800" è locale.

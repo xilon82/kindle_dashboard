@@ -1,0 +1,107 @@
+#!/bin/sh
+# Diagnostica per il pannello: verifica che il Kindle raggiunga il server e raccoglie informazioni.
+#
+# Il pannello NON viene disegnato da qui: su questo firmware (FW 5.x, Kindle 4) ne' eips ne' il fbink
+# incluso in KOReader mostrano PNG, e fermare il framework per fargli spazio ha prodotto schermo
+# bianco e riavvii. Il pannello si guarda nel browser: http://HOST:PORT/panel.html
+#
+# File generato da deploy.ps1: i valori HOST e PORT arrivano da config.toml.
+
+HOST="__HOST__"
+PORT="__PORT__"
+
+WORK_DIR="/mnt/us/dashboard"
+LOG="$WORK_DIR/dashboard.log"
+
+# KUAL lancia gli script con un PATH minimo: senza questo, "wget" puo' sembrare assente.
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+find_cmd() {
+    for candidate in "$@"; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            command -v "$candidate"
+            return 0
+        fi
+        if [ -x "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+WGET="$(find_cmd wget /usr/bin/wget /bin/wget)"
+EIPS="$(find_cmd eips /usr/bin/eips /usr/sbin/eips)"
+
+mkdir -p "$WORK_DIR"
+
+log() {
+    echo "$(date '+%Y-%m-%dT%H:%M:%S') $*" >>"$LOG"
+}
+
+battery_capacity() {
+    for candidate in /sys/class/power_supply/*/capacity; do
+        if [ -r "$candidate" ]; then
+            cat "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+check() {
+    if [ -z "$WGET" ]; then
+        log "check: wget non trovato"
+        return 1
+    fi
+    tmp="$WORK_DIR/check.png"
+    if "$WGET" -q -O "$tmp" "http://$HOST:$PORT/panel.png?t=$(date +%s)"; then
+        log "check: OK http://$HOST:$PORT/panel.png ($(wc -c <"$tmp") byte)"
+        rm -f "$tmp"
+        return 0
+    fi
+    rm -f "$tmp"
+    log "check: FALLITO http://$HOST:$PORT/panel.png (PC spento, IP cambiato o firewall)"
+    return 1
+}
+
+# Impedisce al Kindle di mostrare il salvascherino mentre il pannello e' aperto nel browser.
+# Si tocca solo una proprieta' di sistema: nessun disegno sul framebuffer, nessun framework fermato.
+keep_awake() {
+    out="$(lipc-set-prop com.lab126.powerd preventScreenSaver 1 2>&1)"
+    log "preventScreenSaver=1 -> ${out:-ok}"
+}
+
+allow_sleep() {
+    out="$(lipc-set-prop com.lab126.powerd preventScreenSaver 0 2>&1)"
+    log "preventScreenSaver=0 -> ${out:-ok}"
+}
+
+diag() {
+    log "=== diag ==="
+    log "uname: $(uname -a 2>&1)"
+    log "wget: ${WGET:-ASSENTE} | eips: ${EIPS:-ASSENTE}"
+    log "batteria: $(battery_capacity 2>/dev/null || echo sconosciuta)%"
+    log "url pannello: http://$HOST:$PORT/panel.html"
+    check
+    log "=== fine diag ==="
+}
+
+case "$1" in
+    check)
+        check
+        ;;
+    diag)
+        diag
+        ;;
+    awake)
+        keep_awake
+        ;;
+    sleep)
+        allow_sleep
+        ;;
+    *)
+        echo "uso: $0 {check|diag|awake|sleep}"
+        exit 2
+        ;;
+esac

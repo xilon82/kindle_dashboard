@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Configurazione locale e segreti (l'URL iCal segreto del calendario è una credenziale)
+config.toml
+config.local.toml
+
+# Artefatti: PNG generati e cache dell'ultimo payload buono
+preview.png
+panel.png
+cache/

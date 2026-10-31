@@ -1,0 +1,5 @@
+# Normalizza i finali di riga: gli script per il Kindle devono restare LF anche su Windows,
+# altrimenti `sh` fallisce con "not found" o errori di sintassi.
+* text=auto
+*.sh text eol=lf
+*.sh.template text eol=lf
