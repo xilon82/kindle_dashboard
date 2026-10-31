@@ -89,6 +89,7 @@ class PanelData:
     generated_at: datetime
     timezone: str
     rendered_at: datetime | None = None
+    night: bool = False
     weather: Weather | None = None
     weather_sync: Sync = field(default_factory=Sync)
     events: tuple[CalEvent, ...] = ()

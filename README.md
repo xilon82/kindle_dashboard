@@ -47,7 +47,8 @@ Copy-Item config.example.toml config.toml
 | `trains` | `stop_priority` | `[]` | fermate da tenere sempre quando la riga non basta: le altre vengono ridotte |
 | `render` | `font`, `font_bold` | vuoto | percorsi TTF alternativi a quelli di sistema |
 | `server` | `host`, `port` | `0.0.0.0`, 8787 | dove ascolta il PC |
-| `server` | `data_ttl_seconds` | 300 | per quanto il server riusa i dati raccolti prima di richiamare le API |
+| `schedule` | `night_start`, `night_end` | `23:00`, `06:30` | fascia notturna (finestra anche a cavallo di mezzanotte) |
+| `schedule` | `night_refresh_seconds` | `3600` | ricarica di notte; di notte l'ora è sostituita da `NOTTE` |
 | `cache` | `dir` | `cache` | ultimo payload buono, mostrato quando una fonte cade |
 
 ### Google Calendar
@@ -98,9 +99,17 @@ Sul Kindle apri il browser (**Home → Menu → Browser**) e digita:
 http://<ip-del-pc>:8787/panel.html
 ```
 
-La pagina mostra il PNG e si **ricarica da sola** ogni `refresh_seconds`. Non serve installare nulla
+La pagina mostra il PNG e si **ricarica da sola** ogni `refresh_seconds`, e a ogni ricarica il
+pannello viene **ridisegnato con l'ora corrente** e i dati raccolti in quel momento: non c'è un TTL
+separato, quindi orologio e dati non possono disallinearsi. Non serve installare nulla
 sul device e non si tocca il framework: l'unità USB resta disponibile, il Kindle si comporta
 normalmente e per fermare il pannello basta uscire dal browser.
+
+Di notte (finestra `[schedule]`, default **23:00–06:30**) la pagina si ricarica ogni
+`night_refresh_seconds` e al posto dell'ora compare **`NOTTE`**: l'ora sarebbe vecchia fino a un'ora,
+mentre il footer `dati HH:MM` continua a dire quando i dati sono stati raccolti. L'intervallo non
+supera mai il cambio di fascia, quindi alle 06:29 la pagina si ricarica entro pochi secondi e torna
+alla cadenza diurna. Per vedere l'anteprima notturna senza aspettare le 23: `render --night`.
 
 Per tenerlo visibile: alimentazione da caricatore (non dalla porta USB del PC) e timeout schermo al
 massimo nelle impostazioni. Se compare il salvascherino, un tocco riporta la pagina.

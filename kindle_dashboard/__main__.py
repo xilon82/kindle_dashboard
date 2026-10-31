@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from .cache import Cache
@@ -41,6 +42,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "render", parents=[common], help="genera un'anteprima PNG del pannello"
     )
     render.add_argument("-o", "--output", default="preview.png", help="file PNG di destinazione")
+    render.add_argument(
+        "--night", action="store_true", help="anteprima della modalità notte (orario nascosto)"
+    )
     render.set_defaults(handler=_cmd_render)
 
     server = commands.add_parser("serve", parents=[common], help="serve /panel.png al Kindle")
@@ -58,6 +62,8 @@ def _build_parser() -> argparse.ArgumentParser:
 def _cmd_render(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     data = collect(config, Cache(config.cache_dir))
+    if getattr(args, "night", False):
+        data = replace(data, night=True)
     image = render_panel(
         data,
         (config.panel.width, config.panel.height),

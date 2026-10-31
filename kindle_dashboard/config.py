@@ -5,10 +5,12 @@ from __future__ import annotations
 import os
 import tomllib
 from dataclasses import dataclass, field
+from datetime import time
 from pathlib import Path
 from typing import Any
 
 from .exceptions import ConfigError
+from .schedule import Schedule
 from .timezone_utils import DEFAULT_TIMEZONE
 
 EXAMPLE_CONFIG_FILENAME = "config.example.toml"
@@ -72,7 +74,6 @@ class RenderConfig:
 class ServerConfig:
     host: str = "0.0.0.0"
     port: int = 8787
-    data_ttl_seconds: int = 300
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,11 @@ class Config:
     trains: TrainsConfig = field(default_factory=TrainsConfig)
     render: RenderConfig = field(default_factory=RenderConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
+    schedule: Schedule = field(
+        default_factory=lambda: Schedule(
+            night_start=time(23, 0), night_end=time(6, 30), day_seconds=90, night_seconds=3600
+        )
+    )
     cache_dir: Path = Path("cache")
     location: LocationConfig | None = None
     source_path: Path | None = None
@@ -111,6 +117,7 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
     trains = _section(data, "trains")
     render = _section(data, "render")
     server = _section(data, "server")
+    schedule_table = _section(data, "schedule")
     cache = _section(data, "cache")
     location_table = _section(data, "location")
 
@@ -130,12 +137,26 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
         # L'URL iCal segreto è una credenziale: l'ambiente vince sul file, così non finisce su disco.
         ics_url = os.environ.get(ICS_URL_ENV, "").strip()
 
-    return Config(
-        panel=PanelConfig(
-            width=_int(panel, "width", 600, where="panel", minimum=200),
-            height=_int(panel, "height", 720, where="panel", minimum=200),
-            refresh_seconds=_int(panel, "refresh_seconds", 90, where="panel", minimum=30),
+    panel_config = PanelConfig(
+        width=_int(panel, "width", 600, where="panel", minimum=200),
+        height=_int(panel, "height", 720, where="panel", minimum=200),
+        refresh_seconds=_int(panel, "refresh_seconds", 90, where="panel", minimum=30),
+    )
+    night_start = _clock(schedule_table, "night_start", time(23, 0), where="schedule")
+    night_end = _clock(schedule_table, "night_end", time(6, 30), where="schedule")
+    if night_start == night_end:
+        raise ConfigError("[schedule] night_start e night_end non possono coincidere")
+    schedule_config = Schedule(
+        night_start=night_start,
+        night_end=night_end,
+        day_seconds=panel_config.refresh_seconds,
+        night_seconds=_int(
+            schedule_table, "night_refresh_seconds", 3600, where="schedule", minimum=60
         ),
+    )
+
+    return Config(
+        panel=panel_config,
         weather=WeatherConfig(
             days=_int(weather, "days", 3, where="weather", minimum=1, maximum=7),
             timezone=_str(weather, "timezone", DEFAULT_TIMEZONE, where="weather").strip(),
@@ -165,10 +186,8 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
         server=ServerConfig(
             host=_str(server, "host", "0.0.0.0", where="server").strip(),
             port=_int(server, "port", 8787, where="server", minimum=1, maximum=65535),
-            data_ttl_seconds=_int(
-                server, "data_ttl_seconds", 300, where="server", minimum=30
-            ),
         ),
+        schedule=schedule_config,
         cache_dir=config_path.parent / _str(cache, "dir", "cache", where="cache").strip(),
         location=location,
         source_path=config_path,
@@ -227,6 +246,20 @@ def _number(
     if high is not None and number > high:
         raise ConfigError(f"[{where}] {key} deve essere <= {high}")
     return number
+
+
+def _clock(section: dict[str, Any], key: str, default: time, *, where: str) -> time:
+    """Orario nel formato ``HH:MM``."""
+    value = section.get(key)
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        raise ConfigError(f"[{where}] {key} deve essere una stringa nel formato HH:MM")
+    hours, _, minutes = value.strip().partition(":")
+    try:
+        return time(int(hours), int(minutes))
+    except ValueError as exc:
+        raise ConfigError(f"[{where}] {key} deve essere nel formato HH:MM") from exc
 
 
 def _bool(section: dict[str, Any], key: str, default: bool, *, where: str) -> bool:

@@ -11,5 +11,6 @@ config.local.toml
 
 # Artefatti: PNG generati e cache dell'ultimo payload buono
 preview.png
+preview-night.png
 panel.png
 cache/

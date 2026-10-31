@@ -49,8 +49,13 @@ font_bold = ""
 [server]
 host = "0.0.0.0"
 port = 8787
-# Per quanto il server riusa i dati raccolti prima di richiamare le API.
-data_ttl_seconds = 300
+
+[schedule]
+# Fascia notturna: ricarica più rada e scritta NOTTE al posto dell'orario.
+# L'intervallo non supera mai il confine successivo: alle 06:29 si ricarica subito, non fra un'ora.
+night_start = "23:00"
+night_end = "06:30"
+night_refresh_seconds = 3600
 
 [cache]
 dir = "cache"

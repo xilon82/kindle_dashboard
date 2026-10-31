@@ -15,7 +15,7 @@ from kindle_dashboard.model import (
     WeatherNow,
 )
 from kindle_dashboard.render import fonts
-from kindle_dashboard.render.panel import _stop_label, _stop_line, render_panel
+from kindle_dashboard.render.panel import _clock_label, _stop_label, _stop_line, render_panel
 from kindle_dashboard.timezone_utils import zone
 
 TZ = zone("Europe/Rome")
@@ -130,6 +130,15 @@ def test_stale_sections_are_marked():
     empty = render_panel(PanelData(generated_at=NOW, timezone="Europe/Rome"))
 
     assert render_panel(panel).tobytes() != empty.tobytes()
+
+
+def test_clock_label_switches_to_night_mode():
+    day = PanelData(generated_at=NOW, timezone="Europe/Rome", rendered_at=NOW)
+    night = PanelData(generated_at=NOW, timezone="Europe/Rome", rendered_at=NOW, night=True)
+
+    assert _clock_label(day) == "18:42"
+    assert _clock_label(night) == "NOTTE"
+    assert render_panel(night).size == (600, 800)
 
 
 def test_stop_label_drops_the_city_prefix():

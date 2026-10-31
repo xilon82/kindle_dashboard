@@ -15,14 +15,20 @@ from .collect import collect
 from .config import Config
 from .model import PanelData
 from .render import render_panel
+from .schedule import is_night
+from .schedule import refresh_seconds as schedule_refresh_seconds
 from .timezone_utils import zone
+
+# Se telefono e Kindle chiedono il pannello nello stesso istante si raccoglie una volta sola.
+_COLLECT_GUARD_SECONDS = 5
 
 
 class PanelService:
-    """Dati in cache con TTL e PNG ridisegnato a ogni richiesta.
+    """Dati raccolti e PNG ridisegnato a ogni richiesta.
 
-    Così l'orologio nel pannello è sempre preciso (90 s di drift al massimo) senza rifare ogni volta
-    le chiamate a Open-Meteo, Google e Transitous.
+    Non c'è un TTL sui dati: la cadenza è quella con cui il browser ricarica la pagina (90 s di
+    giorno, un'ora di notte), quindi un TTL separato creerebbe solo un disallineamento fra orologio
+    e dati. La guardia breve serve unicamente contro le richieste doppie.
     """
 
     def __init__(self, config: Config, cache: Cache) -> None:
@@ -34,17 +40,24 @@ class PanelService:
 
     @property
     def refresh_seconds(self) -> int:
-        return self._config.panel.refresh_seconds
+        moment = datetime.now(zone(self._config.timezone))
+        return schedule_refresh_seconds(moment, self._config.schedule)
 
     def png(self) -> bytes:
         with self._lock:
-            data = self._current_data()
             moment = datetime.now(zone(self._config.timezone))
-            return self._render(replace(data, rendered_at=moment))
+            data = self._current_data()
+            return self._render(
+                replace(
+                    data,
+                    rendered_at=moment,
+                    night=is_night(moment, self._config.schedule),
+                )
+            )
 
     def _current_data(self) -> PanelData:
         age = time.monotonic() - self._collected_at
-        if self._data is None or age >= self._config.server.data_ttl_seconds:
+        if self._data is None or age >= _COLLECT_GUARD_SECONDS:
             self._data = collect(self._config, self._cache)
             self._collected_at = time.monotonic()
         return self._data
@@ -95,7 +108,7 @@ def html_panel(refresh_seconds: int, cache_key: int | None = None) -> str:
     ``cache_key`` finisce nell'URL dell'immagine: senza, un browser mobile può continuare a mostrare
     la copia in cache anche con ``Cache-Control: no-store``.
     """
-    interval = max(30, refresh_seconds)
+    interval = max(1, refresh_seconds)
     suffix = f"?t={cache_key}" if cache_key is not None else ""
     return (
         "<!DOCTYPE html>\n"

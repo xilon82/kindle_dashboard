@@ -16,6 +16,7 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
 | Modulo | Responsabilità | Non deve fare |
 |---|---|---|
 | `config.py` | leggere/validare il TOML, risolvere i percorsi | chiamare la rete |
+| `schedule.py` | decidere fascia giorno/notte e intervallo (con clamp al confine) | leggere config o disegnare |
 | `collect.py` | orchestra le tre sezioni, gestisce cache e `Sync` | disegnare |
 | `sources/*` | `fetch_payload` (solo rete) + `parse` (solo trasformazione) | formattare per lo schermo |
 | `cache.py` | persistere l'ultimo payload buono | contenere modelli |
@@ -36,6 +37,8 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
 5. **Il renderer produce un'immagine "L"** alla risoluzione `panel.width/height` e non ridimensiona:
    il device non deve scalare nulla.
 6. **Le larghezze di colonna si misurano con `font.getlength`**, mai con pixel fissi.
+7. **L'intervallo di aggiornamento si calcola solo in `schedule.py`**: fascia corrente e clamp al
+   prossimo cambio. Server e renderer leggono quel risultato, non lo ricalcolano.
 
 ### Configurazione
 
@@ -76,7 +79,7 @@ restare allineate.
 
 | Comando | Cosa copre |
 |---|---|
-| `python -m pytest -q` | 41 test: parsing, ricorrenze ICS, config, cache, render, HTTP |
+| `python -m pytest -q` | 72 test: parsing, ricorrenze ICS, config, pianificazione giorno/notte, cache, render, HTTP |
 | `python -m ruff check .` | stile (line-length 110, regole E/F/I/UP/B/SIM/RUF) |
 | `python -m kindle_dashboard render -o preview.png` | verifica visiva reale |
 

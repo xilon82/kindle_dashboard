@@ -90,7 +90,7 @@ def test_second_instance_cannot_steal_the_listening_port(tmp_path, monkeypatch):
         first.server_close()
 
 
-def test_panel_service_reuses_data_within_ttl(tmp_path, monkeypatch):
+def test_panel_service_guards_against_duplicate_requests(tmp_path, monkeypatch):
     calls = {"count": 0}
 
     def fake_collect(config, cache):
@@ -99,16 +99,14 @@ def test_panel_service_reuses_data_within_ttl(tmp_path, monkeypatch):
 
     monkeypatch.setattr(server, "collect", fake_collect)
     monkeypatch.setattr(server, "render_panel", lambda *args, **kwargs: Image.new("L", (10, 10)))
-    config = Config(
-        server=ServerConfig(host="127.0.0.1", port=0, data_ttl_seconds=300), cache_dir=tmp_path
-    )
+    config = Config(server=ServerConfig(host="127.0.0.1", port=0), cache_dir=tmp_path)
     service = server.PanelService(config, Cache(tmp_path))
 
     service.png()
     service.png()
     assert calls["count"] == 1
 
-    service._collected_at -= 400  # TTL scaduto: deve raccogliere di nuovo
+    service._collected_at -= 10  # oltre la guardia: si raccoglie di nuovo
     service.png()
     assert calls["count"] == 2
 

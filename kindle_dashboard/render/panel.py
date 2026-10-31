@@ -111,6 +111,11 @@ def _moment(data: PanelData) -> datetime:
     return data.rendered_at or data.generated_at
 
 
+def _clock_label(data: PanelData) -> str:
+    """Di notte l'ora sarebbe vecchia fino a un'ora: al suo posto si dichiara la modalità."""
+    return "NOTTE" if data.night else _moment(data).strftime("%H:%M")
+
+
 def _draw_header(draw: ImageDraw.ImageDraw, style: _Style, data: PanelData) -> int:
     moment = _moment(data)
     top = style.px(20)
@@ -127,7 +132,7 @@ def _draw_header(draw: ImageDraw.ImageDraw, style: _Style, data: PanelData) -> i
     clock_top = top + style.px(28)
     draw.text(
         (style.margin, clock_top),
-        moment.strftime("%H:%M"),
+        _clock_label(data),
         font=style.clock_font,
         fill="black",
     )
