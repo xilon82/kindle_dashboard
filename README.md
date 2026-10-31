@@ -114,6 +114,30 @@ alla cadenza diurna. Per vedere l'anteprima notturna senza aspettare le 23: `ren
 Per tenerlo visibile: alimentazione da caricatore (non dalla porta USB del PC) e timeout schermo al
 massimo nelle impostazioni. Se compare il salvascherino, un tocco riporta la pagina.
 
+### Avvio automatico del server
+
+Il pannello si aggiorna solo se il server sul PC è acceso. Per non lanciarlo a mano:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\kindle\autostart.ps1 -Enable    # attiva
+powershell -ExecutionPolicy Bypass -File .\kindle\autostart.ps1 -Disable   # disattiva
+powershell -ExecutionPolicy Bypass -File .\kindle\autostart.ps1            # stato
+```
+
+Come funziona: `-Enable` crea la scorciatoia **`kindle-dashboard.lnk`** nella cartella *Esecuzione
+automatica* dell'utente (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`), che lancia
+`kindle\serve.ps1` con finestra nascosta. Niente privilegi di amministratore, niente servizi di
+sistema: `-Disable` cancella la scorciatoia e l'avvio automatico sparisce.
+
+- Ha effetto **dal prossimo accesso a Windows**. Per avviarlo subito:
+  `powershell -ExecutionPolicy Bypass -File .\kindle\serve.ps1` (o `python -m kindle_dashboard serve`
+  se vuoi vedere l'output nel terminale).
+- I messaggi del server finiscono in **`cache\server.log`**, compresi gli errori come *"porta 8787 non
+  disponibile: chiudi l'istanza già in ascolto"*.
+- `-Status` dice anche se il server è in ascolto e con quale PID.
+- Per fermarlo senza disattivare l'avvio automatico:
+  `Get-NetTCPConnection -LocalPort 8787 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess }`.
+
 ### Estensione KUAL (diagnostica)
 
 L'estensione in `kindle/extensions/dashboard/` non disegna nulla: serve a capire perché il Kindle non
