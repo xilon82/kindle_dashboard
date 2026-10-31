@@ -198,3 +198,5 @@ python -m pytest -q
 ```
 
 Architettura, invarianti e come estendere il progetto: [AGENTS.md](AGENTS.md).
+Percorso tecnico narrato (come funziona e perché, con i bug realmente incontrati):
+[docs/technical-walkthrough.md](docs/technical-walkthrough.md).

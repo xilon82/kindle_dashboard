@@ -116,6 +116,7 @@ Ancora da confermare: comportamento della batteria con la pagina aperta per ore.
 | `README.md` | utente: installazione, configurazione, troubleshooting |
 | `.clinerules` | chi scrive codice: vincoli e gate di commit |
 | `AGENTS.md` | agenti/sviluppatori: architettura, estensioni, mappa dei test |
+| `docs/technical-walkthrough.md` | chi studia il progetto: percorso tecnico narrato, con i bug reali |
 | `config.example.toml` | utente: modello di configurazione commentato |
 | `tests/` | sviluppatori: comportamento atteso, da aggiornare con le modifiche |
 | `kindle/` | deploy: estensione KUAL + script host |
