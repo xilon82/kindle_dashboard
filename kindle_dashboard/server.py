@@ -5,39 +5,51 @@ from __future__ import annotations
 import io
 import threading
 import time
+from dataclasses import replace
+from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .cache import Cache
 from .collect import collect
 from .config import Config
+from .model import PanelData
 from .render import render_panel
+from .timezone_utils import zone
 
 
 class PanelService:
-    """PNG con cache in memoria: il device può chiedere spesso senza martellare le API."""
+    """Dati in cache con TTL e PNG ridisegnato a ogni richiesta.
+
+    Così l'orologio nel pannello è sempre preciso (90 s di drift al massimo) senza rifare ogni volta
+    le chiamate a Open-Meteo, Google e Transitous.
+    """
 
     def __init__(self, config: Config, cache: Cache) -> None:
         self._config = config
         self._cache = cache
         self._lock = threading.Lock()
-        self._payload: bytes | None = None
-        self._built_at = 0.0
+        self._data: PanelData | None = None
+        self._collected_at = 0.0
 
     @property
-    def refresh_minutes(self) -> int:
-        return self._config.panel.refresh_minutes
+    def refresh_seconds(self) -> int:
+        return self._config.panel.refresh_seconds
 
     def png(self) -> bytes:
         with self._lock:
-            age = time.monotonic() - self._built_at
-            if self._payload is None or age >= self._config.server.cache_ttl_seconds:
-                self._payload = self._render()
-                self._built_at = time.monotonic()
-            return self._payload
+            data = self._current_data()
+            moment = datetime.now(zone(self._config.timezone))
+            return self._render(replace(data, rendered_at=moment))
 
-    def _render(self) -> bytes:
-        data = collect(self._config, self._cache)
+    def _current_data(self) -> PanelData:
+        age = time.monotonic() - self._collected_at
+        if self._data is None or age >= self._config.server.data_ttl_seconds:
+            self._data = collect(self._config, self._cache)
+            self._collected_at = time.monotonic()
+        return self._data
+
+    def _render(self, data: PanelData) -> bytes:
         image = render_panel(
             data,
             (self._config.panel.width, self._config.panel.height),
@@ -77,13 +89,13 @@ def serve(config: Config, cache: Cache) -> None:
         httpd.server_close()
 
 
-def html_panel(refresh_minutes: int, cache_key: int | None = None) -> str:
+def html_panel(refresh_seconds: int, cache_key: int | None = None) -> str:
     """Pagina per il browser del Kindle: mostra il PNG e si ricarica da sola (niente framework fermato).
 
     ``cache_key`` finisce nell'URL dell'immagine: senza, un browser mobile può continuare a mostrare
     la copia in cache anche con ``Cache-Control: no-store``.
     """
-    interval = max(60, refresh_minutes * 60)
+    interval = max(30, refresh_seconds)
     suffix = f"?t={cache_key}" if cache_key is not None else ""
     return (
         "<!DOCTYPE html>\n"
@@ -116,7 +128,7 @@ def _handler(service: PanelService) -> type[BaseHTTPRequestHandler]:
                 self._send(
                     HTTPStatus.OK,
                     "text/html; charset=utf-8",
-                    html_panel(service.refresh_minutes, int(time.time())).encode("utf-8"),
+                    html_panel(service.refresh_seconds, int(time.time())).encode("utf-8"),
                 )
             else:
                 self._send_text(HTTPStatus.NOT_FOUND, "non trovato\n")

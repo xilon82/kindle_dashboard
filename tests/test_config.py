@@ -35,7 +35,7 @@ def test_loads_values_and_resolves_cache_dir(tmp_path):
     assert config.trains.stop_id == "it-trenitalia_04702"
     assert config.trains.destinations == ("Torino",)
     assert config.panel.width == 600
-    assert config.panel.height == 800
+    assert config.panel.height == 720
     assert config.cache_dir == tmp_path / "cache"
 
 

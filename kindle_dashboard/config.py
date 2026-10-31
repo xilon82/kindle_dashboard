@@ -19,8 +19,8 @@ ICS_URL_ENV = "KDASH_ICS_URL"
 @dataclass(frozen=True)
 class PanelConfig:
     width: int = 600
-    height: int = 800
-    refresh_minutes: int = 5
+    height: int = 720
+    refresh_seconds: int = 90
 
 
 @dataclass(frozen=True)
@@ -72,7 +72,7 @@ class RenderConfig:
 class ServerConfig:
     host: str = "0.0.0.0"
     port: int = 8787
-    cache_ttl_seconds: int = 90
+    data_ttl_seconds: int = 300
 
 
 @dataclass(frozen=True)
@@ -133,8 +133,8 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
     return Config(
         panel=PanelConfig(
             width=_int(panel, "width", 600, where="panel", minimum=200),
-            height=_int(panel, "height", 800, where="panel", minimum=200),
-            refresh_minutes=_int(panel, "refresh_minutes", 5, where="panel", minimum=1),
+            height=_int(panel, "height", 720, where="panel", minimum=200),
+            refresh_seconds=_int(panel, "refresh_seconds", 90, where="panel", minimum=30),
         ),
         weather=WeatherConfig(
             days=_int(weather, "days", 3, where="weather", minimum=1, maximum=7),
@@ -165,7 +165,9 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
         server=ServerConfig(
             host=_str(server, "host", "0.0.0.0", where="server").strip(),
             port=_int(server, "port", 8787, where="server", minimum=1, maximum=65535),
-            cache_ttl_seconds=_int(server, "cache_ttl_seconds", 90, where="server", minimum=0),
+            data_ttl_seconds=_int(
+                server, "data_ttl_seconds", 300, where="server", minimum=30
+            ),
         ),
         cache_dir=config_path.parent / _str(cache, "dir", "cache", where="cache").strip(),
         location=location,

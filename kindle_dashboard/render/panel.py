@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 from PIL import Image, ImageDraw
 
@@ -21,8 +21,8 @@ from .layout import date_label, divider, fit_text, relative_day
 DEFAULT_SIZE = (600, 800)
 _BASE_HEIGHT = 800
 _TITLE_ROW_PX = 50
-_CALENDAR_ROW_PX = 40
-_TRAIN_ROW_PX = 40
+_CALENDAR_ROW_PX = 44
+_TRAIN_ROW_PX = 44
 _STOPS_ROW_PX = 26
 
 
@@ -106,9 +106,15 @@ def _build_style(size: tuple[int, int], font_override: str, bold_override: str) 
     )
 
 
+def _moment(data: PanelData) -> datetime:
+    """Istante da mostrare all'orologio: il render se c'è, altrimenti la raccolta dati."""
+    return data.rendered_at or data.generated_at
+
+
 def _draw_header(draw: ImageDraw.ImageDraw, style: _Style, data: PanelData) -> int:
+    moment = _moment(data)
     top = style.px(20)
-    draw.text((style.margin, top), date_label(data.generated_at.date()), font=style.date_font, fill="black")
+    draw.text((style.margin, top), date_label(moment.date()), font=style.date_font, fill="black")
     if data.location_name:
         label = data.location_name.upper()
         draw.text(
@@ -118,10 +124,10 @@ def _draw_header(draw: ImageDraw.ImageDraw, style: _Style, data: PanelData) -> i
             fill="black",
         )
 
-    clock_top = top + style.px(36)
+    clock_top = top + style.px(28)
     draw.text(
         (style.margin, clock_top),
-        data.generated_at.strftime("%H:%M"),
+        moment.strftime("%H:%M"),
         font=style.clock_font,
         fill="black",
     )
@@ -131,7 +137,7 @@ def _draw_header(draw: ImageDraw.ImageDraw, style: _Style, data: PanelData) -> i
     else:
         conditions = _section_text(data.weather_sync, "meteo non disponibile")
 
-    status_top = clock_top + style.px(86)
+    status_top = clock_top + style.px(94)
     draw.text(
         (style.margin, status_top),
         fit_text(conditions, style.text_font, style.content_width),
@@ -173,7 +179,7 @@ def _draw_forecast(draw: ImageDraw.ImageDraw, style: _Style, data: PanelData, y:
     days = weather.days[:3]
     column_width = style.content_width / len(days)
     icon_size = style.px(32)
-    today = data.generated_at.date()
+    today = _moment(data).date()
     for index, forecast in enumerate(days):
         left = style.margin + index * column_width
         icons.draw_icon(
@@ -198,7 +204,7 @@ def _draw_calendar(
     if not data.events:
         return _message(draw, style, y, _section_text(data.events_sync, "nessun evento in vista"))
 
-    today = data.generated_at.date()
+    today = _moment(data).date()
     row = style.px(_CALENDAR_ROW_PX)
     for event in data.events:
         if y + row > bottom:
@@ -332,7 +338,7 @@ def _stop_label(name: str) -> str:
 
 
 def _draw_footer(draw: ImageDraw.ImageDraw, style: _Style, data: PanelData) -> None:
-    parts = [f"agg. {data.generated_at.strftime('%H:%M')}"]
+    parts = [f"dati {data.generated_at.strftime('%H:%M')}"]
     if any(item.realtime for item in data.departures):
         parts.append("treni in tempo reale")
     if data.weather_sync.stale or data.events_sync.stale or data.departures_sync.stale:

@@ -34,7 +34,7 @@ Copy-Item config.example.toml config.toml
 | Sezione | Chiave | Default | Significato |
 |---|---|---|---|
 | `panel` | `width` / `height` | 600 / 800 | risoluzione nativa del Kindle |
-| `panel` | `refresh_minutes` | 5 | ogni quanto il device riscarica il PNG |
+| `panel` | `refresh_seconds` | 90 | ogni quanto la pagina si ricarica: il PNG è ridisegnato a ogni richiesta, quindi l'orologio resta preciso |
 | `location` | `name`, `latitude`, `longitude` | — | posizione per il meteo (assente = niente meteo) |
 | `weather` | `days` | 3 | giorni di previsione disegnati (max 7) |
 | `weather` | `timezone` | `Europe/Rome` | fuso usato per orari, calendario e treni |
@@ -47,7 +47,7 @@ Copy-Item config.example.toml config.toml
 | `trains` | `stop_priority` | `[]` | fermate da tenere sempre quando la riga non basta: le altre vengono ridotte |
 | `render` | `font`, `font_bold` | vuoto | percorsi TTF alternativi a quelli di sistema |
 | `server` | `host`, `port` | `0.0.0.0`, 8787 | dove ascolta il PC |
-| `server` | `cache_ttl_seconds` | 90 | per quanto il PNG viene riusato senza rigenerarlo |
+| `server` | `data_ttl_seconds` | 300 | per quanto il server riusa i dati raccolti prima di richiamare le API |
 | `cache` | `dir` | `cache` | ultimo payload buono, mostrato quando una fonte cade |
 
 ### Google Calendar
@@ -98,7 +98,7 @@ Sul Kindle apri il browser (**Home → Menu → Browser**) e digita:
 http://<ip-del-pc>:8787/panel.html
 ```
 
-La pagina mostra il PNG e si **ricarica da sola** ogni `refresh_minutes`. Non serve installare nulla
+La pagina mostra il PNG e si **ricarica da sola** ogni `refresh_seconds`. Non serve installare nulla
 sul device e non si tocca il framework: l'unità USB resta disponibile, il Kindle si comporta
 normalmente e per fermare il pannello basta uscire dal browser.
 

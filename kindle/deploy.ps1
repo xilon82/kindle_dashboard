@@ -43,15 +43,14 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 
 Push-Location $repoRoot
 try {
-    $settings = @(& python -c "from kindle_dashboard.config import load_config; c = load_config(); print(c.server.port); print(c.panel.refresh_minutes)")
+    $settings = @(& python -c "from kindle_dashboard.config import load_config; c = load_config(); print(c.server.port)")
 } finally {
     Pop-Location
 }
-if ($settings.Count -lt 2) {
+if ($settings.Count -lt 1) {
     throw "lettura di config.toml fallita (output: $settings). Esegui prima: python -m kindle_dashboard render"
 }
 $port = [int]$settings[0]
-$refresh = [int]$settings[1]
 
 if (-not $KindleDrive) {
     $drive = Get-PSDrive -PSProvider FileSystem | Where-Object {
@@ -77,7 +76,7 @@ $template = [System.IO.File]::ReadAllText(
     (Join-Path $sourceDir "dashboard.sh.template"),
     [System.Text.Encoding]::UTF8
 )
-$rendered = $template.Replace("__HOST__", $HostAddress).Replace("__PORT__", "$port").Replace("__REFRESH__", "$refresh")
+$rendered = $template.Replace("__HOST__", $HostAddress).Replace("__PORT__", "$port")
 $rendered = $rendered -replace "`r`n", "`n"
 if (-not $rendered.EndsWith("`n")) { $rendered += "`n" }
 
@@ -85,7 +84,6 @@ $target = Join-Path $KindleDrive "extensions\dashboard"
 $scriptPath = Join-Path $target "dashboard.sh"
 Write-Host "Kindle:  $KindleDrive"
 Write-Host "PC:      http://${HostAddress}:$port/panel.png"
-Write-Host "Cadenza: $refresh min"
 Write-Host "Destinazione: $scriptPath"
 
 if ($DryRun) {

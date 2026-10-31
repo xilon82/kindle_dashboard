@@ -3,9 +3,10 @@
 [panel]
 # Risoluzione nativa del Kindle 4/Touch (K4 platform): 600x800.
 width = 600
-height = 800
-# Cadenza di aggiornamento lato device (usata dallo script dell'estensione KUAL).
-refresh_minutes = 5
+height = 720
+# Ogni quanto la pagina si ricarica nel browser. Il PNG viene ridisegnato a ogni richiesta,
+# quindi l'orologio resta preciso anche se i dati (meteo/treni/calendario) hanno un TTL più lungo.
+refresh_seconds = 90
 
 [location]
 name = "Genova"
@@ -48,7 +49,8 @@ font_bold = ""
 [server]
 host = "0.0.0.0"
 port = 8787
-cache_ttl_seconds = 90
+# Per quanto il server riusa i dati raccolti prima di richiamare le API.
+data_ttl_seconds = 300
 
 [cache]
 dir = "cache"

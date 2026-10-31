@@ -5,12 +5,16 @@ from __future__ import annotations
 import threading
 import urllib.error
 import urllib.request
+from datetime import datetime
 
 import pytest
+from PIL import Image
 
 from kindle_dashboard import server
 from kindle_dashboard.cache import Cache
 from kindle_dashboard.config import Config, ServerConfig
+from kindle_dashboard.model import PanelData
+from kindle_dashboard.timezone_utils import zone
 
 FAKE_PNG = b"\x89PNG\r\n\x1a\nfake"
 
@@ -19,7 +23,7 @@ class FakeService:
     def __init__(self, *args, **kwargs) -> None:
         pass
 
-    refresh_minutes = 5
+    refresh_seconds = 300
 
     def png(self) -> bytes:
         return FAKE_PNG
@@ -84,6 +88,29 @@ def test_second_instance_cannot_steal_the_listening_port(tmp_path, monkeypatch):
             second.server_close()
     finally:
         first.server_close()
+
+
+def test_panel_service_reuses_data_within_ttl(tmp_path, monkeypatch):
+    calls = {"count": 0}
+
+    def fake_collect(config, cache):
+        calls["count"] += 1
+        return PanelData(generated_at=datetime.now(zone("Europe/Rome")), timezone="Europe/Rome")
+
+    monkeypatch.setattr(server, "collect", fake_collect)
+    monkeypatch.setattr(server, "render_panel", lambda *args, **kwargs: Image.new("L", (10, 10)))
+    config = Config(
+        server=ServerConfig(host="127.0.0.1", port=0, data_ttl_seconds=300), cache_dir=tmp_path
+    )
+    service = server.PanelService(config, Cache(tmp_path))
+
+    service.png()
+    service.png()
+    assert calls["count"] == 1
+
+    service._collected_at -= 400  # TTL scaduto: deve raccogliere di nuovo
+    service.png()
+    assert calls["count"] == 2
 
 
 def test_unknown_path_returns_404(tmp_path, monkeypatch):

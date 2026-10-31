@@ -76,7 +76,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     host = "localhost" if config.server.host in {"0.0.0.0", "::"} else config.server.host
     print(f"pannello: http://{host}:{config.server.port}/panel.html")
-    print(f"refresh consigliato: {config.panel.refresh_minutes} min - Ctrl+C per uscire")
+    print(f"refresh consigliato: {config.panel.refresh_seconds} s - Ctrl+C per uscire")
     try:
         serve(config, Cache(config.cache_dir))
     except OSError as exc:
