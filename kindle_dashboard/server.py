@@ -103,10 +103,12 @@ def serve(config: Config, cache: Cache) -> None:
 
 
 def html_panel(refresh_seconds: int, cache_key: int | None = None) -> str:
-    """Pagina per il browser del Kindle: mostra il PNG e si ricarica da sola (niente framework fermato).
+    """Pagina per il browser del Kindle: mostra il PNG e si ricarica da sola.
 
-    ``cache_key`` finisce nell'URL dell'immagine: senza, un browser mobile può continuare a mostrare
-    la copia in cache anche con ``Cache-Control: no-store``.
+    Versione allineata a quella che funziona su Windows (Kindle 4 OK):
+    - meta refresh (non JS setTimeout)
+    - CSS con vh (NetFront lo ignora se non supportato)
+    - niente Connection: close esplicito (HTTP/1.0 chiude da solo)
     """
     interval = max(1, refresh_seconds)
     suffix = f"?t={cache_key}" if cache_key is not None else ""
