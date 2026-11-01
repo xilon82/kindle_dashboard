@@ -141,18 +141,59 @@ Solo standard library: `urllib.request`. Caratteristiche:
 
 ```
 latitude, longitude,
-current=temperature_2m,weather_code,apparent_temperature,precipitation,wind_speed_10m
-daily=weather_code,temperature_2m_max,temperature_2m_min
+current=temperature_2m,weather_code,apparent_temperature,precipitation,
+        wind_speed_10m,wind_direction_10m
+daily=weather_code,temperature_2m_max,temperature_2m_min,
+      wind_speed_10m_max,wind_direction_10m_dominant
 timezone=Europe/Rome, forecast_days=3,
-temperature_unit=celsius, wind_speed_unit=kmh, precipitation_unit=mm
+temperature_unit=celsius, wind_speed_unit=kn, precipitation_unit=mm
 ```
+
+Il vento è in **nodi** (`wind_speed_unit=kn`) perché il pannello è nautico: l'unità si chiede
+all'API, non si converte nel renderer, altrimenti header e striscia potrebbero divergere.
 
 `parse()` costruisce `WeatherNow` (ora) e `DayForecast[]` (giorni). I codici **WMO** (0–99) sono
 mappati in due direzioni: una descrizione italiana (`label`) e una **famiglia di icona**
 (`icon_kind` → `sun`, `partly`, `cloud`, `rain`, `drizzle`, `snow`, `storm`, `fog`). Tenere separate
 le due cose evita che il renderer conosca i codici numerici.
 
-### 4.3 Treni — Transitous/MOTIS (`sources/trains.py`)
+I campi aggiunti dopo (`wind_direction_10m`, `wind_speed_10m_max`) si leggono con gli helper di
+`sources/values.py`: un payload in cache scritto prima esiste ancora e deve restare ri-analizzabile,
+altrimenti il fallback smetterebbe di funzionare proprio quando serve.
+
+### 4.3 Mare — Open-Meteo Marine (`sources/marine.py`)
+
+`https://marine-api.open-meteo.com/v1/marine`, **nessuna API key**, stesse coordinate di
+`[location]` (una sezione `[sea]` con coordinate proprie sarebbe una seconda verità da tenere
+allineata). Il punto richiesto viene agganciato alla griglia del modello d'onda: per Santa Marinella
+(42.0342/11.8542) la risposta arriva da 42.0417/11.8750, circa 1.8 km al largo.
+
+```
+current=wave_height,sea_surface_temperature
+daily=wave_height_max
+timezone=Europe/Rome, forecast_days=3
+```
+
+`parse()` produce `SeaNow` + `SeaDay[]`. Lo **stato del mare** è la scala Douglas, in una tabella
+sola con tre letture: `state_force` (il grado, `F3` nella striscia), `state_label` (la parola,
+`mosso`, usata nell'header dove lo spazio c'è) e `state_kind` (la famiglia di glifo: `sea_calm`,
+`sea_slight`, `sea_moderate`, `sea_rough`). Le soglie sono in metri di altezza d'onda significativa
+(0.1 / 0.5 / 1.25 / 2.5 / 4 / 6 / 9) e si confrontano con l'altezza **arrotondata al decimale
+mostrato**: senza quel `round`, `0.48 m` verrebbe scritto `0.5m` e classificato "quasi calmo",
+mentre `0.50 m` è "poco mosso" — due stati diversi dietro lo stesso numero.
+
+Perché due grafie: nella colonna da 185 px `F3` costa 15 px contro i 75 di `poco mosso`, ed è
+l'unico modo per tenere insieme altezza d'onda, vento e direzione. Sulla riga grande dell'header,
+dove lo spazio abbonda, la parola si legge di sfuggita meglio di un numero.
+
+Due dettagli che sembrano cavilli e non lo sono:
+
+- **accoppiamento per data, non per indice**: la striscia delle previsioni prende il mare da
+  `{day: SeaDay}`; se un giorno manca, le colonne non si spostano;
+- **la sezione spenta non produce errore** (`Sync()` vuoto), così il renderer distingue "non
+  configurata" da "configurata ma caduta" e scrive `mare n.d.` solo nel secondo caso.
+
+### 4.4 Treni — Transitous/MOTIS (`sources/trains.py`)
 
 **Prima trappola, documentata perché è costata tempo**: ViaggiaTreno (l'API "ufficiosa" di
 Trenitalia) **non è più usabile da uno script**. La richiesta
@@ -446,22 +487,24 @@ Strategia: **nessun test tocca la rete, il filesystem utente o il device**. Tre 
 - `tmp_path` di pytest per cache e file di configurazione;
 - `FakeService` + `build_server(..., port=0)` per provare l'HTTP su una porta effimera reale.
 
-I payload veri stanno in `tests/fixtures/` (`weather_openmeteo.json`, `transitous_stoptimes.json`,
-`transitous_trip.json`, `transitous_geocode.json`, `calendar.ics`); `conftest.py` espone `read_fixture`,
-`load_json`, `rome`.
+I payload veri stanno in `tests/fixtures/` (`weather_openmeteo.json`, `marine_openmeteo.json`,
+`transitous_stoptimes.json`, `transitous_trip.json`, `transitous_geocode.json`, `calendar.ics`);
+`conftest.py` espone `read_fixture`, `load_json`, `rome`.
 
 | File | Test | Cosa copre |
 |---|---|---|
+| `test_render.py` | 31 | dimensioni/mode, determinismo, sezioni vuote, troncamenti, priorità fermate, `NOTTE`, segmenti testo+icona, punti cardinali |
 | `test_schedule.py` | 17 | confini 22:59/23:00 e 06:29/06:30, mezzanotte, clamp, intervalli |
-| `test_weather.py` | 13 | parsing Open-Meteo, campi mancanti, codici WMO |
+| `test_config.py` | 16 | valori, errori parlanti, override da ambiente, `stop_details`, `[schedule]`, `[sea]` |
+| `test_sea.py` | 16 | parsing Open-Meteo Marine, scala Douglas (forza e parola), campi mancanti, coordinate della richiesta |
+| `test_weather.py` | 15 | parsing Open-Meteo (nodi, direzione del vento), campi mancanti, codici WMO, unità della richiesta |
 | `test_trains.py` | 10 | partenze passate, ritardo, binario, cancellazioni, filtro, fermate da `/trip` |
-| `test_render.py` | 10 | dimensioni/mode, determinismo, sezioni vuote, troncamenti, priorità fermate, `NOTTE` |
-| `test_config.py` | 9 | valori, errori parlanti, override da ambiente, `stop_details`, `[schedule]` |
+| `test_collect.py` | 7 | sezioni non configurate, fallback su cache con `stale=True` (meteo, differenziata, mare) |
 | `test_calendar.py` | 6 | `BYDAY`/`COUNT`, `EXDATE`, override `RECURRENCE-ID`, annullato, `TZID` sconosciuto, URL embed |
+| `test_waste.py` | 6 | ricorrenze e giorni della differenziata |
 | `test_server.py` | 5 | `/health`, `/panel.png`, `/panel.html`, 404, porta non rubabile, guardia anti-doppione |
-| `test_collect.py` | 2 | sezioni non configurate, fallback su cache con `stale=True` |
 
-Totale **72**, con `python -m pytest -q`.
+Totale **129**, con `python -m pytest -q`.
 
 ---
 
@@ -472,6 +515,7 @@ Totale **72**, con `python -m pytest -q`.
 | `ZoneInfoNotFoundError: 'Europe/Rome'` | Windows non ha il database IANA | dipendenza `tzdata` |
 | I test non importano il package | pytest non aggiunge la root al `sys.path` | `pythonpath = ["."]` |
 | L'ora si sovrappone al nome del treno | colonne a pixel fissi | larghezze da `getlength` |
+| `0.5m` mostrato come "quasi calmo" | soglie Douglas sul valore pieno, numero arrotondato a 1 decimale | classificazione sull'altezza arrotondata (`_state`) |
 | `Image support is disabled in this FBInk build` | build MINIMAL di KOReader | `eips`, poi il browser |
 | `eips` esce con 0 e lo schermo resta bianco | il firmware non rende i PNG | passaggio al browser |
 | Schermo bianco + USB sparita + riavvio | framework fermato = niente modalità archivio | non fermare il framework |
@@ -512,14 +556,16 @@ kindle_dashboard/
   server.py            HTTP, PanelService, html_panel
   __main__.py          CLI: render / serve / resolve-station
   sources/http.py      urllib con UA, timeout, retry mirato
-  sources/weather.py   Open-Meteo: fetch + parse + codici WMO
+  sources/values.py    lettura tollerante dei campi JSON opzionali
+  sources/weather.py   Open-Meteo: fetch + parse + codici WMO (vento in nodi)
+  sources/marine.py    Open-Meteo Marine: onde e scala Douglas (forza/parola/glifo)
   sources/trains.py    Transitous: stoptimes, trip, geocode
   sources/calendar.py  parser ICS (folding, RRULE, EXDATE, RECURRENCE-ID)
   sources/waste.py     raccolta differenziata: finestra allineata ai giorni
   render/fonts.py      ricerca TTF con fallback
-  render/icons.py      glifi meteo vettoriali
-  render/layout.py     fit_text, divider, etichette di data
-  render/panel.py      composizione del pannello
+  render/icons.py      glifi vettoriali: meteo, mare, vento, persona
+  render/layout.py     fit_text, divider, etichette di data, punti cardinali
+  render/panel.py      composizione del pannello (righe miste testo+icona)
 kindle/                estensione KUAL + deploy.ps1 + allow-lan.ps1
 tests/                 pytest con fixture registrate
 docs/                  questo documento

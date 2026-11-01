@@ -18,7 +18,8 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
 | `config.py` | leggere/validare il TOML, risolvere i percorsi | chiamare la rete |
 | `schedule.py` | decidere fascia giorno/notte e intervallo (con clamp al confine) | leggere config o disegnare |
 | `collect.py` | orchestra le tre sezioni, gestisce cache e `Sync` | disegnare |
-| `sources/*` | `fetch_payload` (solo rete) + `parse` (solo trasformazione) | formattare per lo schermo |
+| `sources/*` | `fetch_payload` (solo rete) + `parse` (solo trasformazione); `weather`, `marine`, `calendar`, `waste`, `trains` | formattare per lo schermo |
+| `sources/values.py` | lettura tollerante dei valori JSON opzionali (`optional_float`, `series_int`, …) | contenere logica di dominio |
 | `cache.py` | persistere l'ultimo payload buono | contenere modelli |
 | `model.py` | dataclass immutabili | importare Pillow |
 | `render/*` | disegnare `PanelData` | fare I/O di rete |
@@ -39,6 +40,15 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
 6. **Le larghezze di colonna si misurano con `font.getlength`**, mai con pixel fissi.
 7. **L'intervallo di aggiornamento si calcola solo in `schedule.py`**: fascia corrente e clamp al
    prossimo cambio. Server e renderer leggono quel risultato, non lo ricalcolano.
+8. **Il vento è in nodi** (`wind_speed_unit=kn`): modello, header e striscia usano la stessa unità e
+   nessuno converte nel renderer. La direzione si scrive a 16 settori (`NNE`) ed è **obbligatoria**
+   sulla riga condizioni: quando lo spazio manca cede il mare, non il vento. Il mare viene dalle
+   coordinate di `[location]`, non da una sezione con coordinate proprie, e la sua classificazione
+   (forza Douglas, parola, glifo) è una tabella sola in `sources/marine.py`.
+9. **Le righe miste testo+icona passano da `_draw_inline`**: i pezzi sono `_Segment` con `required`
+   falso quando possono cedere (temperatura dell'acqua nell'header, direzione nella striscia).
+   Larghezze sempre da `font.getlength`, mai pixel scelti a occhio, e le icone si allineano al
+   **centro dell'inchiostro** del testo via `_icon_top`, non al bordo del riquadro del font.
 
 ### Configurazione
 
@@ -51,7 +61,9 @@ lo specifica. Una sezione assente disattiva la relativa parte del pannello, non 
 
 ### Nuova fonte dati
 1. `sources/<nome>.py`: `fetch_payload(...)` (usa `sources/http.get_json`/`get_text`) e
-   `parse(payload, ...)` che restituisce dataclass di `model.py` o lancia `SourceError`.
+   `parse(payload, ...)` che restituisce dataclass di `model.py` o lancia `SourceError`. Per i campi
+   opzionali usa gli helper di `sources/values.py`: una cache scritta prima di un campo nuovo deve
+   restare ri-analizzabile.
 2. Modello in `model.py` (frozen) + campo in `PanelData` e relativo `Sync`.
 3. Sezione TOML in `config.py` (dataclass + helper `_str`/`_int`/`_number`) e in `config.example.toml`.
 4. `collect.py`: `_<nome>(config, cache, moment)` sul modello di `_weather` (fetch → store → parse,
@@ -61,9 +73,13 @@ lo specifica. Una sezione assente disattiva la relativa parte del pannello, non 
 
 ### Nuovo blocco nel pannello
 1. `_draw_<blocco>(draw, style, data, y) -> int` in `render/panel.py`.
-2. Usa `style.px()` per le misure e `fit_text()` per i testi: righe e larghezze dai font.
+2. Usa `style.px()` per le misure e `fit_text()` per i testi: righe e larghezze dai font. Per una
+   riga mista testo+icona usa `_draw_inline` con segmenti `_Segment` (`required=False` sui pezzi che
+   possono cedere): il troncamento vive lì e non va duplicato.
 3. Rispetta il budget verticale (`_TITLE_ROW_PX` per il titolo, costante di riga dedicata) e la
-   regola "i treni hanno lo spazio riservato in fondo".
+   regola "i treni hanno lo spazio riservato in fondo". Una sezione che si riconosce dalle icone può
+   fare a meno del titolo e usare `_section_rule` (solo separatore): la striscia meteo lo fa e
+   guadagna una riga.
 4. Aggiorna `tests/test_render.py` e rigenera `preview.png`.
 5. Il blocco agenda (`_draw_agenda`) ha due colonne solo quando `PanelData.waste` non è `None`: le
    larghezze vengono da `_EVENTS_SHARE` e `_COLUMN_GUTTER_PX`, non da pixel scelti a occhio.
@@ -81,7 +97,7 @@ restare allineate.
 
 | Comando | Cosa copre |
 |---|---|
-| `python -m pytest -q` | 87 test: parsing, ricorrenze ICS, raccolta differenziata, config, pianificazione giorno/notte, cache, render, HTTP |
+| `python -m pytest -q` | 129 test: parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP |
 | `python -m ruff check .` | stile (line-length 110, regole E/F/I/UP/B/SIM/RUF) |
 | `python -m kindle_dashboard render -o preview.png` | verifica visiva reale |
 

@@ -17,6 +17,13 @@ longitude = 8.9476
 days = 3
 timezone = "Europe/Rome"
 
+[sea]
+# Condizioni del mare dalle stesse coordinate di [location] (Open-Meteo Marine API, nessuna chiave):
+# stato in scala Douglas, altezza d'onda e direzione di provenienza. false = pannello senza mare.
+enabled = false
+# Giorni di previsione: si accoppiano **per data** alle giornate del meteo, non per posizione.
+days = 3
+
 [calendar]
 # Google Calendar > Impostazioni calendario > "Indirizzo segreto in formato iCal".
 # Vuoto = riquadro calendario non configurato. Si può fornire anche via KDASH_ICS_URL.

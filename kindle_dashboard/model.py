@@ -8,29 +8,63 @@ from datetime import date, datetime
 
 @dataclass(frozen=True)
 class WeatherNow:
-    """Condizioni attuali."""
+    """Condizioni attuali.
+
+    Il vento è in nodi (unità nautica: il pannello è pensato per chi guarda il mare) e
+    ``wind_direction`` è la direzione **di provenienza** in gradi, come da convenzione
+    meteorologica.
+    """
 
     temperature: float
     code: int
     apparent: float | None = None
     precipitation_mm: float | None = None
-    wind_kmh: float | None = None
+    wind_kn: float | None = None
+    wind_direction: int | None = None
 
 
 @dataclass(frozen=True)
 class DayForecast:
-    """Previsione giornaliera (minima/massima e codice WMO)."""
+    """Previsione giornaliera: temperature, codice WMO e vento massimo in nodi."""
 
     day: date
     code: int
     t_min: float
     t_max: float
+    wind_kn: float | None = None
+    wind_direction: int | None = None
 
 
 @dataclass(frozen=True)
 class Weather:
     now: WeatherNow
     days: tuple[DayForecast, ...]
+
+
+@dataclass(frozen=True)
+class SeaNow:
+    """Condizioni del mare attuali: altezza d'onda in metri e temperatura dell'acqua."""
+
+    wave_height: float
+    water_temperature: float | None = None
+
+
+@dataclass(frozen=True)
+class SeaDay:
+    """Previsione giornaliera del mare: solo l'altezza massima dell'onda.
+
+    Lo stato (parola o forza Douglas) si ricava dall'altezza: tenerlo anche qui sarebbe una
+    seconda verità da mantenere allineata.
+    """
+
+    day: date
+    wave_height_max: float
+
+
+@dataclass(frozen=True)
+class Sea:
+    now: SeaNow
+    days: tuple[SeaDay, ...]
 
 
 @dataclass(frozen=True)
@@ -100,6 +134,10 @@ class PanelData:
     night: bool = False
     weather: Weather | None = None
     weather_sync: Sync = field(default_factory=Sync)
+    # None = sezione mare spenta o senza dati: il renderer non disegna il blocco né la riga
+    # sotto le previsioni, così "spenta" e "vuota" restano distinguibili dal testo dell'errore.
+    sea: Sea | None = None
+    sea_sync: Sync = field(default_factory=Sync)
     events: tuple[CalEvent, ...] = ()
     events_sync: Sync = field(default_factory=Sync)
     # None = sezione non configurata (la colonna destra non viene disegnata); () = configurata

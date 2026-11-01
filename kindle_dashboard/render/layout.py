@@ -11,6 +11,20 @@ from .fonts import Font
 ELLIPSIS = "…"
 WEEKDAYS = ("LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM")
 MONTHS = ("GEN", "FEB", "MAR", "APR", "MAG", "GIU", "LUG", "AGO", "SET", "OTT", "NOV", "DIC")
+# Sedici settori e non otto: in barca la differenza fra NE e NNE si sente, e nel pannello lo
+# spazio per un carattere in più c'è. Le sigle sono quelle italiane (O = Ovest, SO = Sud-Ovest).
+COMPASS_POINTS = (
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO",
+)
+
+
+def compass(degrees: float | None) -> str:
+    """Direzione di provenienza a 16 settori (``NNE``); vuota se il dato manca."""
+    if degrees is None:
+        return ""
+    index = round((float(degrees) % 360) / 22.5) % len(COMPASS_POINTS)
+    return COMPASS_POINTS[index]
 
 
 def fit_text(text: str, font: Font, max_width: float) -> str:

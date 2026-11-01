@@ -4,20 +4,37 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+import pytest
+
 from kindle_dashboard.model import (
     CalEvent,
     CallAt,
     DayForecast,
     Departure,
     PanelData,
+    Sea,
+    SeaDay,
+    SeaNow,
     Sync,
     WasteDay,
     Weather,
     WeatherNow,
 )
 from kindle_dashboard.render import fonts
-from kindle_dashboard.render.layout import waste_day_label
-from kindle_dashboard.render.panel import _clock_label, _stop_label, _stop_line, render_panel
+from kindle_dashboard.render.layout import compass, waste_day_label
+from kindle_dashboard.render.panel import (
+    _clock_label,
+    _condition_segments,
+    _fit_inline,
+    _icon_top,
+    _inline_width,
+    _sea_day_segments,
+    _sea_segments,
+    _stop_label,
+    _stop_line,
+    _text,
+    render_panel,
+)
 from kindle_dashboard.timezone_utils import zone
 
 TZ = zone("Europe/Rome")
@@ -31,14 +48,46 @@ def full_panel() -> PanelData:
         location_name="Genova",
         board_name="Genova Brignole",
         weather=Weather(
-            now=WeatherNow(temperature=16.6, code=2, apparent=15.9, wind_kmh=8.4),
+            now=WeatherNow(
+                temperature=16.6, code=2, apparent=15.9, wind_kn=8.4, wind_direction=18
+            ),
             days=(
-                DayForecast(day=date(2026, 10, 31), code=2, t_min=12.0, t_max=19.1),
-                DayForecast(day=date(2026, 11, 1), code=3, t_min=11.3, t_max=17.4),
-                DayForecast(day=date(2026, 11, 2), code=61, t_min=9.5, t_max=15.0),
+                DayForecast(
+                    day=date(2026, 10, 31),
+                    code=2,
+                    t_min=12.0,
+                    t_max=19.1,
+                    wind_kn=11.1,
+                    wind_direction=13,
+                ),
+                DayForecast(
+                    day=date(2026, 11, 1),
+                    code=3,
+                    t_min=11.3,
+                    t_max=17.4,
+                    wind_kn=17.9,
+                    wind_direction=6,
+                ),
+                DayForecast(
+                    day=date(2026, 11, 2),
+                    code=61,
+                    t_min=9.5,
+                    t_max=15.0,
+                    wind_kn=7.2,
+                    wind_direction=355,
+                ),
             ),
         ),
         weather_sync=Sync(updated_at=NOW),
+        sea=Sea(
+            now=SeaNow(wave_height=0.48, water_temperature=20.6),
+            days=(
+                SeaDay(day=date(2026, 10, 31), wave_height_max=0.54),
+                SeaDay(day=date(2026, 11, 1), wave_height_max=0.52),
+                SeaDay(day=date(2026, 11, 2), wave_height_max=1.3),
+            ),
+        ),
+        sea_sync=Sync(updated_at=NOW),
         events=(
             CalEvent(start=NOW, summary="Palestra"),
             CalEvent(start=datetime(2026, 11, 1, 0, 0, tzinfo=TZ), summary="Ponte", all_day=True),
@@ -253,3 +302,136 @@ def test_configured_but_empty_waste_section_shows_its_message():
 
     assert image.size == (600, 800)
     assert image.tobytes() != render_panel(empty).tobytes()
+
+
+def test_panel_with_sea_differs_from_panel_without_it():
+    data = full_panel()
+    without_sea = PanelData(
+        generated_at=data.generated_at,
+        timezone=data.timezone,
+        weather=data.weather,
+        weather_sync=data.weather_sync,
+    )
+
+    with_sea = render_panel(data)
+
+    assert with_sea.size == (600, 800)
+    assert with_sea.tobytes() != render_panel(without_sea).tobytes()
+
+
+def test_failed_sea_section_is_declared_in_the_status_line_only():
+    """Sezione configurata ma caduta: "mare n.d." sulla riga condizioni, nessuna riga in più."""
+    weather = full_panel().weather
+    failed = PanelData(
+        generated_at=NOW,
+        timezone="Europe/Rome",
+        weather=weather,
+        weather_sync=Sync(updated_at=NOW),
+        sea_sync=Sync(error="marine-api.open-meteo.com: HTTP 503"),
+    )
+    plain = PanelData(
+        generated_at=NOW,
+        timezone="Europe/Rome",
+        weather=weather,
+        weather_sync=Sync(updated_at=NOW),
+    )
+
+    image = render_panel(failed)
+
+    assert image.size == (600, 800)
+    assert image.tobytes() != render_panel(plain).tobytes()
+
+
+@pytest.mark.parametrize(
+    ("degrees", "expected"),
+    [
+        (0, "N"),
+        (18, "NNE"),
+        (45, "NE"),
+        (90, "E"),
+        (137, "SE"),
+        (180, "S"),
+        (270, "O"),
+        (343, "NNO"),
+        (359, "N"),
+        (None, ""),
+    ],
+)
+def test_compass_uses_sixteen_sectors(degrees, expected):
+    assert compass(degrees) == expected
+
+
+def test_fit_inline_drops_optional_pieces_before_truncating():
+    font = fonts.load(20)
+    segments = (
+        _text("poco mosso"),
+        _text("0.6m", required=False),
+        _text("da SE", required=False),
+    )
+
+    wide = _fit_inline(segments, font, 18, 6, 1000)
+    narrow = _fit_inline(segments, font, 18, 6, 120)
+
+    assert [segment.text for segment in wide] == ["poco mosso", "0.6m", "da SE"]
+    assert [segment.text for segment in narrow] == ["poco mosso"]
+    assert _inline_width(narrow, font, 18, 6) <= 120
+
+
+def test_fit_inline_truncates_the_last_text_when_nothing_can_be_dropped():
+    font = fonts.load(20)
+
+    fitted = _fit_inline((_text("pioggia forte e vento"),), font, 18, 6, 60)
+
+    assert fitted[0].text.endswith("…")
+    assert _inline_width(fitted, font, 18, 6) <= 60
+
+
+def test_wind_direction_is_required_in_the_status_line():
+    """Il vento non deve perdere la direzione: è il mare a cedere spazio, non lui."""
+    weather = Weather(
+        now=WeatherNow(temperature=16.6, code=2, apparent=9.0, wind_kn=15.0, wind_direction=18),
+        days=(),
+    )
+
+    segments = _condition_segments(weather)
+
+    # Il percepito usa il glifo "persona": è quello che sente il corpo, non un termometro.
+    assert segments[1].icon == "person"
+    assert [segment.text for segment in segments if segment.text] == [
+        "poco nuvoloso",
+        "9°",
+        "15 kn",
+        "NNE",
+    ]
+    assert all(segment.required for segment in segments)
+
+
+def test_sea_block_shows_state_height_and_water_temperature():
+    sea = Sea(now=SeaNow(wave_height=0.48, water_temperature=20.6), days=())
+
+    segments = _sea_segments(sea)
+
+    assert segments[0].icon == "sea_slight"
+    assert [segment.text for segment in segments if segment.text] == ["poco mosso", "0.5m", "21°"]
+    # L'acqua è l'unico pezzo che può cedere.
+    assert [segment.required for segment in segments if segment.text] == [True, True, False]
+
+
+def test_sea_day_row_uses_the_douglas_force():
+    day = SeaDay(day=date(2026, 11, 2), wave_height_max=1.3)
+
+    segments = _sea_day_segments(day, 17.3, 13)
+
+    assert segments[0].icon == "sea_moderate"
+    assert [segment.text for segment in segments if segment.text] == ["F3", "1.3m", "17 kn", "NNE"]
+    assert segments[-1].required is False
+
+
+def test_icon_is_centred_on_the_text_ink():
+    """Il glifo si allinea al centro dell'inchiostro, non al bordo del riquadro del font."""
+    font = fonts.load(20)
+    _, cap_top, _, cap_bottom = font.getbbox("H")
+
+    top = _icon_top(font, 100, 18)
+
+    assert top + 18 / 2 == pytest.approx(100 + (cap_top + cap_bottom) / 2, abs=0.5)

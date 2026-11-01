@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import math
+
 from PIL import ImageDraw
 
 _STROKE_DIVISOR = 14
+# Livello di "agitazione" del glifo per ciascuno stato del mare (vedi ``sources.marine``).
+_SEA_KINDS = {"sea_calm": 1, "sea_slight": 2, "sea_moderate": 3, "sea_rough": 4}
 
 
 def draw_icon(draw: ImageDraw.ImageDraw, kind: str, box: tuple[int, int, int, int]) -> None:
@@ -42,6 +46,12 @@ def draw_icon(draw: ImageDraw.ImageDraw, kind: str, box: tuple[int, int, int, in
         share = 0.62 if kind == "rain" else 0.72
         _cloud(draw, left, top, size, size * share)
         _rain(draw, left, top + size * share, size, stroke, drops=3 if kind == "rain" else 2)
+    elif kind in _SEA_KINDS:
+        _waves(draw, left, top, size, stroke, level=_SEA_KINDS[kind])
+    elif kind == "wind":
+        _wind(draw, left, top, size, stroke)
+    elif kind == "person":
+        _person(draw, left, top, size)
     else:
         _cloud(draw, left, top, size, size * 0.8)
 
@@ -128,3 +138,61 @@ def _fog(draw: ImageDraw.ImageDraw, left: int, top: int, size: int, stroke: int)
             fill="black",
             width=stroke,
         )
+
+
+def _waves(draw: ImageDraw.ImageDraw, left: float, top: float, size: int, stroke: int, *, level: int) -> None:
+    """Due creste piene: l'ampiezza cresce con lo stato del mare, così il glifo resta leggibile."""
+    # A 14-16 px un tratto da 3 px mangia l'ampiezza dell'onda: si assottiglia invece di scurire.
+    width = stroke if size >= 20 else max(2, stroke - 1)
+    amplitude = size * (0.04 + 0.04 * level)
+    step = size / 12
+    for row in range(2):
+        base = top + size * (0.36 + 0.30 * row)
+        points = [
+            (left + step * index, base + amplitude * math.sin(index * math.pi / 4))
+            for index in range(13)
+        ]
+        draw.line(points, fill="black", width=width, joint="curve")
+
+
+def _wind(draw: ImageDraw.ImageDraw, left: float, top: float, size: int, stroke: int) -> None:
+    """Freccia con due raffi: si legge come vento anche a 14 px, dove tre righe sarebbero una macchia."""
+    mid = top + size * 0.52
+    draw.line([left + size * 0.10, mid, left + size * 0.70, mid], fill="black", width=stroke)
+    draw.polygon(
+        [
+            (left + size * 0.68, mid - size * 0.18),
+            (left + size, mid),
+            (left + size * 0.68, mid + size * 0.18),
+        ],
+        fill="black",
+    )
+    thin = max(2, stroke - 1)
+    draw.line(
+        [left + size * 0.06, top + size * 0.24, left + size * 0.42, top + size * 0.24],
+        fill="black",
+        width=thin,
+    )
+    draw.line(
+        [left + size * 0.06, top + size * 0.80, left + size * 0.30, top + size * 0.80],
+        fill="black",
+        width=thin,
+    )
+
+
+def _person(draw: ImageDraw.ImageDraw, left: float, top: float, size: int) -> None:
+    """Busto stilizzato (testa + spalle) per la temperatura percepita: a 18 px una figura
+    intera sarebbe una macchia."""
+    center = left + size * 0.5
+    head = size * 0.19
+    draw.ellipse(
+        [center - head, top + size * 0.04, center + head, top + size * 0.04 + 2 * head],
+        fill="black",
+    )
+    # Spalle come semicerchio pieno: il lato piatto cade sul fondo del riquadro, senza sbordare.
+    draw.pieslice(
+        [left + size * 0.12, top + size * 0.52, left + size * 0.88, top + size * 1.48],
+        180,
+        360,
+        fill="black",
+    )

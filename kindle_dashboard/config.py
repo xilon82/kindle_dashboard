@@ -39,6 +39,14 @@ class WeatherConfig:
 
 
 @dataclass(frozen=True)
+class SeaConfig:
+    """Condizioni del mare: usa le coordinate di ``[location]``, non ne ha di proprie."""
+
+    enabled: bool = False
+    days: int = 3
+
+
+@dataclass(frozen=True)
 class CalendarConfig:
     ics_url: str = ""
     max_events: int = 4
@@ -92,6 +100,7 @@ class ServerConfig:
 class Config:
     panel: PanelConfig = field(default_factory=PanelConfig)
     weather: WeatherConfig = field(default_factory=WeatherConfig)
+    sea: SeaConfig = field(default_factory=SeaConfig)
     calendar: CalendarConfig = field(default_factory=CalendarConfig)
     waste: WasteConfig = field(default_factory=WasteConfig)
     trains: TrainsConfig = field(default_factory=TrainsConfig)
@@ -126,6 +135,7 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
 
     panel = _section(data, "panel")
     weather = _section(data, "weather")
+    sea = _section(data, "sea")
     calendar = _section(data, "calendar")
     waste = _section(data, "waste")
     trains = _section(data, "trains")
@@ -174,6 +184,10 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
         weather=WeatherConfig(
             days=_int(weather, "days", 3, where="weather", minimum=1, maximum=7),
             timezone=_str(weather, "timezone", DEFAULT_TIMEZONE, where="weather").strip(),
+        ),
+        sea=SeaConfig(
+            enabled=_bool(sea, "enabled", False, where="sea"),
+            days=_int(sea, "days", 3, where="sea", minimum=1, maximum=7),
         ),
         calendar=CalendarConfig(
             ics_url=ics_url,

@@ -6,8 +6,9 @@
 
 ## §Progetto
 
-Genera un PNG 600x800 (meteo, Google Calendar, partenze treni) servito via HTTP a un Kindle
-jailbroken che lo disegna con FBInk. Nessuna API key: Open-Meteo + Transitous; Pillow disegna.
+Genera un PNG 600x800 (meteo, mare, Google Calendar, partenze treni) servito via HTTP a un Kindle
+jailbroken che lo disegna con FBInk. Nessuna API key: Open-Meteo (meteo e mare) + Transitous;
+Pillow disegna.
 
 ```
 kindle_dashboard/
@@ -19,7 +20,8 @@ kindle_dashboard/
   server.py          HTTP stdlib: /panel.png, /health
   exceptions.py      SourceError, ConfigError
   timezone_utils.py  unico punto che crea un ZoneInfo
-  sources/           http.py, weather.py, calendar.py, trains.py (fetch_payload + parse)
+  sources/           http.py, weather.py, marine.py, calendar.py, waste.py, trains.py
+                     (fetch_payload + parse) + values.py (lettura tollerante)
   render/            fonts.py, icons.py, layout.py, panel.py
 kindle/              estensione KUAL + deploy.ps1 (lato device)
 tests/               pytest con fixture registrate, zero rete
@@ -97,6 +99,10 @@ Errori realmente accaduti qui, da non ripetere:
     davvero e non c'è nessuna cache del browser da incolpare.
 16. **I browser mobili ignorano `Cache-Control: no-store` su un `<img>` con URL fisso**: l'HTML deve
     referenziare `/panel.png?t=<epoch>`, altrimenti si continua a vedere il pannello vecchio.
+17. **Cambiare unità di misura invalida la cache**: `cache/weather.json` conteneva il vento in km/h e
+    nessun `wind_speed_10m_max`; dopo il passaggio ai nodi un fallback avrebbe mostrato km/h
+    spacciati per nodi. Dopo un cambio di unità (o di campi) svuota `cache/` prima di rigenerare, e
+    leggi i campi nuovi con gli helper tolleranti di `sources/values.py`.
 
 ## §Workflow
 
