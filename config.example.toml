@@ -17,12 +17,28 @@ longitude = 8.9476
 days = 3
 timezone = "Europe/Rome"
 
+[sea]
+# Condizioni del mare dalle stesse coordinate di [location] (Open-Meteo Marine API, nessuna chiave):
+# stato in scala Douglas, altezza d'onda e direzione di provenienza. false = pannello senza mare.
+enabled = false
+# Giorni di previsione: si accoppiano **per data** alle giornate del meteo, non per posizione.
+days = 3
+
 [calendar]
 # Google Calendar > Impostazioni calendario > "Indirizzo segreto in formato iCal".
 # Vuoto = riquadro calendario non configurato. Si può fornire anche via KDASH_ICS_URL.
 ics_url = ""
 max_events = 4
 days_ahead = 7
+
+[waste]
+# Calendario della raccolta differenziata: un iCal **pubblico** con un evento all-day per ogni
+# giorno di raccolta e il materiale nel titolo (es. "Umido"). Se il calendario non è tuo, in
+# Google Calendar > Impostazioni > "Indirizzo pubblico in formato iCal" trovi l'URL `.../public/basic.ics`.
+# Vuoto = la colonna destra non viene disegnata e il calendario eventi resta a tutta larghezza.
+ics_url = ""
+# Giorni mostrati: oggi, domani e i successivi. I giorni senza raccolta compaiono come "niente".
+days = 3
 
 [trains]
 base_url = "https://api.transitous.org"

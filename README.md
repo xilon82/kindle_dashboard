@@ -1,7 +1,8 @@
 # kindle-dashboard
 
-Pannello e-ink per un Kindle jailbroken: **meteo**, **Google Calendar** e **partenze dei treni**
-vengono raccolti sul PC e disegnati in un PNG da 600x800 (risoluzione nativa del Kindle 4/Touch).
+Pannello e-ink per un Kindle jailbroken: **meteo**, **mare**, **Google Calendar**, **raccolta
+differenziata** e **partenze dei treni** vengono raccolti sul PC e disegnati in un PNG da 600x800
+(risoluzione nativa del Kindle 4/Touch).
 Il Kindle non esegue codice del progetto: scarica il PNG via WiFi e lo mostra a schermo intero con
 FBInk. Un pannello non deve mai bloccarsi, quindi ogni sezione ha un fallback.
 
@@ -12,7 +13,7 @@ FBInk. Un pannello non deve mai bloccarsi, quindi ogni sezione ha un fallback.
   alla stessa rete del PC. Verificato su un Kindle 4 (`reader.lua` riporta `device Kindle4`,
   600x800 @ 167 dpi). Attenzione: il Kindle 4 ha solo Wi-Fi **2.4 GHz**, quindi il PC deve essere
   raggiungibile da quell'SSID (stessa subnet).
-- Nessuna API key: meteo da Open-Meteo, treni da Transitous.
+- Nessuna API key: meteo e mare da Open-Meteo, treni da Transitous.
 
 ## Installazione
 
@@ -36,10 +37,14 @@ Copy-Item config.example.toml config.toml
 | `panel` | `width` / `height` | 600 / 800 | risoluzione nativa del Kindle |
 | `panel` | `refresh_seconds` | 90 | ogni quanto la pagina si ricarica: il PNG è ridisegnato a ogni richiesta, quindi l'orologio resta preciso |
 | `location` | `name`, `latitude`, `longitude` | — | posizione per il meteo (assente = niente meteo) |
-| `weather` | `days` | 3 | giorni di previsione disegnati (max 7) |
+| `weather` | `days` | 3 | giorni di previsione disegnati (max 7); il vento è in **nodi** |
 | `weather` | `timezone` | `Europe/Rome` | fuso usato per orari, calendario e treni |
+| `sea` | `enabled` | `false` | condizioni del mare dalle stesse coordinate di `[location]`: stato, altezza d'onda e temperatura dell'acqua |
+| `sea` | `days` | 3 | giorni di mare nella striscia delle previsioni, accoppiati **per data** al meteo |
 | `calendar` | `ics_url` | vuoto | URL iCal segreto di Google Calendar |
 | `calendar` | `max_events`, `days_ahead` | 4, 7 | quanti eventi e su quanti giorni |
+| `waste` | `ics_url` | vuoto | URL iCal **pubblico** del calendario della raccolta differenziata (vuoto = colonna destra assente) |
+| `waste` | `days` | 3 | giorni mostrati nella colonna: oggi, domani e il successivo |
 | `trains` | `station`, `stop_id` | — | stazione del tabellone (assente = niente treni) |
 | `trains` | `max_departures` | 4 | partenze mostrate |
 | `trains` | `destinations` | `[]` | filtro per sottostringa (vuoto = tutte) |
@@ -56,6 +61,36 @@ Copy-Item config.example.toml config.toml
 Google Calendar > Impostazioni del calendario > *Indirizzo segreto in formato iCal*: incolla l'URL
 in `calendar.ics_url`. In alternativa usa la variabile d'ambiente `KDASH_ICS_URL`, che ha la
 precedenza solo se il file non specifica nulla: utile per non scrivere la credenziale su disco.
+
+### Raccolta differenziata
+
+Se il comune pubblica i giorni di raccolta come calendario iCal (un evento all-day per giorno, il
+materiale nel titolo: `Umido`, `Secco`, `Plastica`, `Carta`), incolla l'URL **pubblico** in
+`waste.ics_url`. Con quella sezione configurata il blocco del calendario si divide in **due colonne**:
+gli eventi a sinistra e la differenziata a destra con oggi, domani e il giorno successivo (`days`).
+I giorni senza raccolta mostrano `niente`, così si vede subito che oggi non va messo fuori nulla;
+se il calendario è spento la colonna sparisce e gli eventi tornano a tutta larghezza.
+
+L'URL è pubblico e non è una credenziale, quindi niente variabile d'ambiente. Attenzione
+all'intervallo coperto dal calendario: quello di Santa Marinella arriva dal 01/06/2026 al 31/12/2026,
+quindi fuori da quelle date la colonna mostra solo `niente` finché il comune non lo aggiorna.
+
+### Mare
+
+Con `sea.enabled = true` il pannello aggiunge le condizioni del mare dalle **stesse coordinate di
+`[location]`** (Open-Meteo Marine API, nessuna chiave):
+
+- sulla riga delle condizioni, allineato a destra: stato in parole, altezza d'onda e temperatura
+  dell'acqua (`poco mosso 0.6m 21°`);
+- sotto ciascuna delle tre giornate: **forza Douglas** (`F3`), altezza d'onda, vento massimo in nodi
+  e direzione (`F3 1.3m 21 kn NNE`). La forza costa 15 px contro i 75 di `poco mosso`: è ciò che fa
+  entrare altezza, unità e direzione nella colonna da 185 px.
+
+La scala Douglas è quella dei bollettini italiani: 0 calmo, 1 quasi calmo, 2 poco mosso, 3 mosso,
+4 molto mosso, 5 agitato, 6 molto agitato, 7 grosso. La classificazione usa l'altezza arrotondata al
+decimale mostrato, così `0.5m` non può comparire come "quasi calmo". Se la fonte cade il pannello
+mostra `mare n.d.` senza occupare una riga in più, e il footer segnala che alcuni dati vengono dalla
+cache. Per una località lontana dal mare conviene lasciare la sezione spenta.
 
 ### Stazione dei treni
 
@@ -183,6 +218,8 @@ Tutti accettano `--config <file>` dopo il sottocomando.
 | Non vedo "Dashboard" in KUAL | `config.xml` deve dichiarare il menu con `<menus><menu type="json" dynamic="true">menu.json</menu></menus>`: senza quel blocco KUAL non elenca l'estensione (confronta con `extensions/koreader/config.xml`, che funziona). Dopo la copia riapri KUAL; se resta invisibile, riavvia il Kindle |
 | Nel calendario vedo solo "URL pubblico" e "iframe" | il calendario non è tuo (lo sottoscrivi): Google non fornisce a chi lo sottoscrive l'indirizzo iCal. Chiedi al proprietario di passarti l'URL segreto o di rendere il calendario pubblico (allora vale `.../ical/<id>/public/basic.ics`), altrimenti serve l'API Google con OAuth |
 | Calendario vuoto | `calendar.ics_url` mancante o URL revocato (Google lo rigenera) |
+| La colonna della differenziata non compare | `[waste] ics_url` è vuoto: la sezione è spenta e il calendario resta a tutta larghezza |
+| Differenziata tutta "niente" | il calendario pubblico copre solo un intervallo di date (Santa Marinella: 01/06/2026–31/12/2026) oppure `waste.ics_url` punta a un altro calendario |
 
 Log del device: `/mnt/us/dashboard/dashboard.log`.
 

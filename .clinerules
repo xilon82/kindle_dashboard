@@ -6,8 +6,9 @@
 
 ## §Progetto
 
-Genera un PNG 600x800 (meteo, Google Calendar, partenze treni) servito via HTTP a un Kindle
-jailbroken che lo disegna con FBInk. Nessuna API key: Open-Meteo + Transitous; Pillow disegna.
+Genera un PNG 600x800 (meteo, mare, Google Calendar, partenze treni) servito via HTTP a un Kindle
+jailbroken che lo disegna con FBInk. Nessuna API key: Open-Meteo (meteo e mare) + Transitous;
+Pillow disegna.
 
 ```
 kindle_dashboard/
@@ -19,7 +20,8 @@ kindle_dashboard/
   server.py          HTTP stdlib: /panel.png, /health
   exceptions.py      SourceError, ConfigError
   timezone_utils.py  unico punto che crea un ZoneInfo
-  sources/           http.py, weather.py, calendar.py, trains.py (fetch_payload + parse)
+  sources/           http.py, weather.py, marine.py, calendar.py, waste.py, trains.py
+                     (fetch_payload + parse) + values.py (lettura tollerante)
   render/            fonts.py, icons.py, layout.py, panel.py
 kindle/              estensione KUAL + deploy.ps1 (lato device)
 tests/               pytest con fixture registrate, zero rete
@@ -90,9 +92,17 @@ Errori realmente accaduti qui, da non ripetere:
 15. **Un `serve` già in ascolto fa fallire in silenzio il riavvio**: con più processi `python -m
     kindle_dashboard serve` avviati nel tempo il bind della porta fallisce, resta attiva l'istanza
     vecchia e sembra che le modifiche "non abbiano effetto". Prima di dire "riavviato" controllare
-    `Get-NetTCPConnection -LocalPort 8787 -State Listen` e il PID che risponde.
+    `Get-NetTCPConnection -LocalPort 8787 -State Listen` e il PID che risponde. Il processo tiene il
+    **codice in memoria**: la raccolta dati ogni 5 s non ricarica il modulo, quindi dopo una modifica
+    al renderer serve un riavvio. La prova che manca è confrontare `(Get-Process -Id <pid>).StartTime`
+    con l'ora delle modifiche: se il processo è più vecchio, il PNG vecchio è quello che sta servendo
+    davvero e non c'è nessuna cache del browser da incolpare.
 16. **I browser mobili ignorano `Cache-Control: no-store` su un `<img>` con URL fisso**: l'HTML deve
     referenziare `/panel.png?t=<epoch>`, altrimenti si continua a vedere il pannello vecchio.
+17. **Cambiare unità di misura invalida la cache**: `cache/weather.json` conteneva il vento in km/h e
+    nessun `wind_speed_10m_max`; dopo il passaggio ai nodi un fallback avrebbe mostrato km/h
+    spacciati per nodi. Dopo un cambio di unità (o di campi) svuota `cache/` prima di rigenerare, e
+    leggi i campi nuovi con gli helper tolleranti di `sources/values.py`.
 
 ## §Workflow
 

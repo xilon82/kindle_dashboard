@@ -92,3 +92,59 @@ def test_stop_details_must_be_boolean(tmp_path):
 
     with pytest.raises(ConfigError, match="stop_details"):
         load_config(write(tmp_path, text))
+
+
+def test_waste_is_disabled_by_default(tmp_path):
+    config = load_config(write(tmp_path, MINIMAL))
+
+    assert config.waste.enabled is False
+    assert config.waste.days == 3
+
+
+def test_waste_calendar_is_read_from_its_section(tmp_path):
+    text = MINIMAL + (
+        "\n[waste]\n"
+        'ics_url = "https://calendar.example/public/basic.ics"\n'
+        "days = 2\n"
+    )
+
+    config = load_config(write(tmp_path, text))
+
+    assert config.waste.enabled is True
+    assert config.waste.ics_url == "https://calendar.example/public/basic.ics"
+    assert config.waste.days == 2
+
+
+def test_waste_days_out_of_range_is_rejected(tmp_path):
+    text = MINIMAL + '\n[waste]\nics_url = "https://calendar.example/x"\ndays = 0\n'
+
+    with pytest.raises(ConfigError, match=r"\[waste\] days"):
+        load_config(write(tmp_path, text))
+
+
+def test_sea_is_disabled_by_default(tmp_path):
+    config = load_config(write(tmp_path, MINIMAL))
+
+    assert config.sea.enabled is False
+    assert config.sea.days == 3
+
+
+def test_sea_section_can_be_enabled(tmp_path):
+    config = load_config(write(tmp_path, MINIMAL + "\n[sea]\nenabled = true\ndays = 2\n"))
+
+    assert config.sea.enabled is True
+    assert config.sea.days == 2
+
+
+def test_sea_days_out_of_range_is_rejected(tmp_path):
+    text = MINIMAL + "\n[sea]\nenabled = true\ndays = 9\n"
+
+    with pytest.raises(ConfigError, match=r"\[sea\] days"):
+        load_config(write(tmp_path, text))
+
+
+def test_sea_enabled_must_be_boolean(tmp_path):
+    text = MINIMAL + '\n[sea]\nenabled = "si"\n'
+
+    with pytest.raises(ConfigError, match=r"\[sea\] enabled"):
+        load_config(write(tmp_path, text))

@@ -10,9 +10,11 @@ from zoneinfo import ZoneInfo
 from .cache import Cache
 from .config import Config
 from .exceptions import SourceError
-from .model import CalEvent, Departure, PanelData, Sync, Weather
+from .model import CalEvent, Departure, PanelData, Sea, Sync, WasteDay, Weather
 from .sources import calendar as calendar_source
+from .sources import marine as marine_source
 from .sources import trains as trains_source
+from .sources import waste as waste_source
 from .sources import weather as weather_source
 from .timezone_utils import zone
 
@@ -23,7 +25,9 @@ def collect(config: Config, cache: Cache, now: datetime | None = None) -> PanelD
     moment = now.astimezone(tz) if now is not None else datetime.now(tz)
 
     weather, weather_sync = _weather(config, cache, moment, tz)
+    sea, sea_sync = _sea(config, cache, moment)
     events, events_sync = _events(config, cache, moment, tz)
+    waste, waste_sync = _waste(config, cache, moment, tz)
     departures, departures_sync = _departures(config, cache, moment)
 
     return PanelData(
@@ -31,8 +35,12 @@ def collect(config: Config, cache: Cache, now: datetime | None = None) -> PanelD
         timezone=config.timezone,
         weather=weather,
         weather_sync=weather_sync,
+        sea=sea,
+        sea_sync=sea_sync,
         events=events,
         events_sync=events_sync,
+        waste=waste,
+        waste_sync=waste_sync,
         departures=departures,
         departures_sync=departures_sync,
         location_name=config.location.name if config.location else "",
@@ -74,6 +82,40 @@ def _weather_from_cache(
         return None, Sync(error=str(error))
 
 
+def _sea(config: Config, cache: Cache, moment: datetime) -> tuple[Sea | None, Sync]:
+    """``None`` quando la sezione è spenta o manca la posizione: il renderer non disegna il mare."""
+    if not config.sea.enabled:
+        # Spenta di proposito: nessun errore, altrimenti il renderer annuncerebbe un guasto.
+        return None, Sync()
+    if config.location is None:
+        return None, Sync(error="mare non configurato: posizione assente")
+    try:
+        payload = marine_source.fetch_payload(
+            config.location.latitude,
+            config.location.longitude,
+            days=config.sea.days,
+            timezone=config.timezone,
+        )
+        sea = marine_source.parse(payload, days=config.sea.days)
+    except SourceError as exc:
+        return _sea_from_cache(cache, config, exc)
+    cache.store("sea", payload, moment)
+    return sea, Sync(updated_at=moment)
+
+
+def _sea_from_cache(cache: Cache, config: Config, error: SourceError) -> tuple[Sea | None, Sync]:
+    cached = cache.load("sea")
+    if cached is None:
+        return None, Sync(error=str(error))
+    payload, saved_at = cached
+    try:
+        return marine_source.parse(payload, days=config.sea.days), Sync(
+            updated_at=saved_at, error=str(error), stale=True
+        )
+    except SourceError:
+        return None, Sync(error=str(error))
+
+
 def _events(
     config: Config, cache: Cache, moment: datetime, tz: ZoneInfo
 ) -> tuple[tuple[CalEvent, ...], Sync]:
@@ -95,6 +137,30 @@ def _events(
             return (), Sync(error=str(exc))
     cache.store("calendar", payload, moment)
     return events, Sync(updated_at=moment)
+
+
+def _waste(
+    config: Config, cache: Cache, moment: datetime, tz: ZoneInfo
+) -> tuple[tuple[WasteDay, ...] | None, Sync]:
+    """``None`` quando la sezione è spenta: il renderer deve poter togliere la colonna destra."""
+    if not config.waste.enabled:
+        return None, Sync(error="differenziata non configurata")
+    try:
+        payload = waste_source.fetch_payload(config.waste.ics_url)
+        days = _parse_waste(payload, config, moment, tz)
+    except SourceError as exc:
+        cached = cache.load("waste")
+        if cached is None:
+            return (), Sync(error=str(exc))
+        cached_payload, saved_at = cached
+        try:
+            return _parse_waste(str(cached_payload), config, moment, tz), Sync(
+                updated_at=saved_at, error=str(exc), stale=True
+            )
+        except SourceError:
+            return (), Sync(error=str(exc))
+    cache.store("waste", payload, moment)
+    return days, Sync(updated_at=moment)
 
 
 def _departures(
@@ -154,6 +220,14 @@ def _parse_calendar(
         end=moment + timedelta(days=config.calendar.days_ahead),
         tz=tz,
         limit=config.calendar.max_events,
+    )
+
+
+def _parse_waste(
+    payload: str, config: Config, moment: datetime, tz: ZoneInfo
+) -> tuple[WasteDay, ...]:
+    return waste_source.parse(
+        payload, today=moment.date(), days=config.waste.days, tz=tz
     )
 
 

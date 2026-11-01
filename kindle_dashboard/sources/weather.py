@@ -1,7 +1,8 @@
 """Meteo da Open-Meteo: servizio pubblico, nessuna API key.
 
 ``fetch_payload`` restituisce il JSON grezzo (così può essere messo in cache e ri-analizzato),
-``parse`` lo trasforma nel modello di dominio.
+``parse`` lo trasforma nel modello di dominio. Il vento si chiede in **nodi**: il pannello è
+nautico e l'unità non si converte nel renderer.
 """
 
 from __future__ import annotations
@@ -12,11 +13,18 @@ from typing import Any
 from ..exceptions import SourceError
 from ..model import DayForecast, Weather, WeatherNow
 from .http import DEFAULT_TIMEOUT, get_json
+from .values import optional_float, optional_int, series_float, series_int
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
 
-_CURRENT_FIELDS = "temperature_2m,weather_code,apparent_temperature,precipitation,wind_speed_10m"
-_DAILY_FIELDS = "weather_code,temperature_2m_max,temperature_2m_min"
+_CURRENT_FIELDS = (
+    "temperature_2m,weather_code,apparent_temperature,precipitation,"
+    "wind_speed_10m,wind_direction_10m"
+)
+_DAILY_FIELDS = (
+    "weather_code,temperature_2m_max,temperature_2m_min,"
+    "wind_speed_10m_max,wind_direction_10m_dominant"
+)
 
 _LABELS: dict[int, str] = {
     0: "sereno",
@@ -92,7 +100,8 @@ def fetch_payload(
             ("timezone", timezone),
             ("forecast_days", days),
             ("temperature_unit", "celsius"),
-            ("wind_speed_unit", "kmh"),
+            # Nodi e non km/h: il pannello è nautico e il mare è misurato in nodi.
+            ("wind_speed_unit", "kn"),
             ("precipitation_unit", "mm"),
         ],
         timeout=timeout,
@@ -110,16 +119,21 @@ def parse(payload: dict[str, Any], *, days: int) -> Weather:
         now = WeatherNow(
             temperature=float(current["temperature_2m"]),
             code=int(current["weather_code"]),
-            apparent=_optional_float(current.get("apparent_temperature")),
-            precipitation_mm=_optional_float(current.get("precipitation")),
-            wind_kmh=_optional_float(current.get("wind_speed_10m")),
+            apparent=optional_float(current.get("apparent_temperature")),
+            precipitation_mm=optional_float(current.get("precipitation")),
+            wind_kn=optional_float(current.get("wind_speed_10m")),
+            wind_direction=optional_int(current.get("wind_direction_10m")),
         )
+        wind_series = daily.get("wind_speed_10m_max")
+        wind_directions = daily.get("wind_direction_10m_dominant")
         forecasts = tuple(
             DayForecast(
                 day=date.fromisoformat(str(daily["time"][index])),
                 code=int(daily["weather_code"][index]),
                 t_max=float(daily["temperature_2m_max"][index]),
                 t_min=float(daily["temperature_2m_min"][index]),
+                wind_kn=series_float(wind_series, index),
+                wind_direction=series_int(wind_directions, index),
             )
             for index in range(min(days, len(daily["time"])))
         )
@@ -128,9 +142,3 @@ def parse(payload: dict[str, Any], *, days: int) -> Weather:
     if not forecasts:
         raise SourceError("meteo: nessuna previsione giornaliera nella risposta")
     return Weather(now=now, days=forecasts)
-
-
-def _optional_float(value: object) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    return float(value)

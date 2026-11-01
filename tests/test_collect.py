@@ -6,8 +6,10 @@ from datetime import datetime
 
 from kindle_dashboard.cache import Cache
 from kindle_dashboard.collect import collect
-from kindle_dashboard.config import Config, LocationConfig
+from kindle_dashboard.config import Config, LocationConfig, SeaConfig, WasteConfig
 from kindle_dashboard.exceptions import SourceError
+from kindle_dashboard.sources import marine as marine_source
+from kindle_dashboard.sources import waste as waste_source
 from kindle_dashboard.sources import weather as weather_source
 from kindle_dashboard.timezone_utils import zone
 
@@ -21,6 +23,9 @@ def test_unconfigured_sections_explain_themselves(tmp_path):
     assert data.weather_sync.error == "posizione non configurata"
     assert data.events_sync.error == "calendario non configurato"
     assert data.departures_sync.error == "treni non configurati"
+    # None e non (): il renderer usa questa differenza per spegnere la colonna destra.
+    assert data.waste is None
+    assert data.waste_sync.error == "differenziata non configurata"
 
 
 def test_weather_falls_back_to_cache_when_the_source_fails(tmp_path, monkeypatch, load_json):
@@ -48,3 +53,90 @@ def test_weather_falls_back_to_cache_when_the_source_fails(tmp_path, monkeypatch
     assert cached.weather_sync.error == "api.open-meteo.com: HTTP 503"
     assert cached.weather_sync.updated_at == NOW
     assert cached.weather.days == fresh.weather.days
+
+
+def test_waste_falls_back_to_cache_when_the_source_fails(tmp_path, monkeypatch, read_fixture):
+    config = Config(
+        waste=WasteConfig(ics_url="https://calendar.example/public/basic.ics"),
+        cache_dir=tmp_path,
+    )
+    cache = Cache(tmp_path)
+    monkeypatch.setattr(waste_source, "fetch_payload", lambda *args, **kwargs: read_fixture("waste.ics"))
+
+    fresh = collect(config, cache, NOW)
+    assert fresh.waste is not None
+    assert fresh.waste_sync.stale is False
+    assert fresh.waste_sync.updated_at == NOW
+    assert fresh.waste[0].kinds == ("Umido",)
+
+    def failing(*args, **kwargs):
+        raise SourceError("calendar.google.com: HTTP 503")
+
+    monkeypatch.setattr(waste_source, "fetch_payload", failing)
+    cached = collect(config, cache, NOW)
+
+    assert cached.waste == fresh.waste
+    assert cached.waste_sync.stale is True
+    assert cached.waste_sync.error == "calendar.google.com: HTTP 503"
+    assert cached.waste_sync.updated_at == NOW
+
+
+def test_waste_without_cache_reports_the_error_and_stays_empty(tmp_path, monkeypatch):
+    config = Config(waste=WasteConfig(ics_url="https://calendar.example/x"), cache_dir=tmp_path)
+
+    def failing(*args, **kwargs):
+        raise SourceError("calendar.example: HTTP 500")
+
+    monkeypatch.setattr(waste_source, "fetch_payload", failing)
+
+    data = collect(config, Cache(tmp_path), NOW)
+
+    assert data.waste == ()
+    assert data.waste_sync.error == "calendar.example: HTTP 500"
+    assert data.waste_sync.stale is False
+
+
+def test_sea_is_off_until_configured(tmp_path):
+    data = collect(Config(cache_dir=tmp_path), Cache(tmp_path), NOW)
+
+    assert data.sea is None
+    # Sezione spenta: nessun errore, così il renderer non annuncia un guasto che non esiste.
+    assert data.sea_sync.error is None
+
+
+def test_sea_without_location_explains_itself(tmp_path):
+    config = Config(sea=SeaConfig(enabled=True), cache_dir=tmp_path)
+
+    data = collect(config, Cache(tmp_path), NOW)
+
+    assert data.sea is None
+    assert data.sea_sync.error is not None
+    assert "posizione" in data.sea_sync.error
+
+
+def test_sea_falls_back_to_cache_when_the_source_fails(tmp_path, monkeypatch, load_json):
+    payload = load_json("marine_openmeteo.json")
+    config = Config(
+        location=LocationConfig(name="Santa Marinella", latitude=42.0342, longitude=11.8542),
+        sea=SeaConfig(enabled=True),
+        cache_dir=tmp_path,
+    )
+    cache = Cache(tmp_path)
+    monkeypatch.setattr(marine_source, "fetch_payload", lambda *args, **kwargs: payload)
+
+    fresh = collect(config, cache, NOW)
+    assert fresh.sea is not None
+    assert fresh.sea_sync.stale is False
+    assert fresh.sea_sync.updated_at == NOW
+    assert fresh.sea.now.wave_height == 0.46
+
+    def failing(*args, **kwargs):
+        raise SourceError("marine-api.open-meteo.com: HTTP 503")
+
+    monkeypatch.setattr(marine_source, "fetch_payload", failing)
+    cached = collect(config, cache, NOW)
+
+    assert cached.sea == fresh.sea
+    assert cached.sea_sync.stale is True
+    assert cached.sea_sync.error == "marine-api.open-meteo.com: HTTP 503"
+    assert cached.sea_sync.updated_at == NOW

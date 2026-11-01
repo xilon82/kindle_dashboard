@@ -39,10 +39,30 @@ class WeatherConfig:
 
 
 @dataclass(frozen=True)
+class SeaConfig:
+    """Condizioni del mare: usa le coordinate di ``[location]``, non ne ha di proprie."""
+
+    enabled: bool = False
+    days: int = 3
+
+
+@dataclass(frozen=True)
 class CalendarConfig:
     ics_url: str = ""
     max_events: int = 4
     days_ahead: int = 7
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.ics_url)
+
+
+@dataclass(frozen=True)
+class WasteConfig:
+    """Calendario comunale della raccolta differenziata: un iCal pubblico, un evento per giorno."""
+
+    ics_url: str = ""
+    days: int = 3
 
     @property
     def enabled(self) -> bool:
@@ -80,7 +100,9 @@ class ServerConfig:
 class Config:
     panel: PanelConfig = field(default_factory=PanelConfig)
     weather: WeatherConfig = field(default_factory=WeatherConfig)
+    sea: SeaConfig = field(default_factory=SeaConfig)
     calendar: CalendarConfig = field(default_factory=CalendarConfig)
+    waste: WasteConfig = field(default_factory=WasteConfig)
     trains: TrainsConfig = field(default_factory=TrainsConfig)
     render: RenderConfig = field(default_factory=RenderConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
@@ -113,7 +135,9 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
 
     panel = _section(data, "panel")
     weather = _section(data, "weather")
+    sea = _section(data, "sea")
     calendar = _section(data, "calendar")
+    waste = _section(data, "waste")
     trains = _section(data, "trains")
     render = _section(data, "render")
     server = _section(data, "server")
@@ -161,10 +185,18 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
             days=_int(weather, "days", 3, where="weather", minimum=1, maximum=7),
             timezone=_str(weather, "timezone", DEFAULT_TIMEZONE, where="weather").strip(),
         ),
+        sea=SeaConfig(
+            enabled=_bool(sea, "enabled", False, where="sea"),
+            days=_int(sea, "days", 3, where="sea", minimum=1, maximum=7),
+        ),
         calendar=CalendarConfig(
             ics_url=ics_url,
             max_events=_int(calendar, "max_events", 4, where="calendar", minimum=1, maximum=20),
             days_ahead=_int(calendar, "days_ahead", 7, where="calendar", minimum=1, maximum=60),
+        ),
+        waste=WasteConfig(
+            ics_url=_str(waste, "ics_url", "", where="waste").strip(),
+            days=_int(waste, "days", 3, where="waste", minimum=1, maximum=7),
         ),
         trains=TrainsConfig(
             base_url=_str(trains, "base_url", "https://api.transitous.org", where="trains").rstrip(
