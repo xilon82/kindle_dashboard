@@ -8,14 +8,14 @@ FBInk. Un pannello non deve mai bloccarsi, quindi ogni sezione ha un fallback.
 
 ## Requisiti
 
-- PC acceso con Python 3.11+ (verificato su Windows 11, Python 3.13).
+- PC acceso con **Python 3.11+** (verificato su Windows 11, Python 3.13) — *oppure* **Docker + Compose** (vedi [Avvio con Docker](#avvio-con-docker-alternativa-al-venv)).
 - Kindle jailbroken con **KUAL** installato e **KOReader** (fornisce il binario `fbink`), collegato
   alla stessa rete del PC. Verificato su un Kindle 4 (`reader.lua` riporta `device Kindle4`,
   600x800 @ 167 dpi). Attenzione: il Kindle 4 ha solo Wi-Fi **2.4 GHz**, quindi il PC deve essere
   raggiungibile da quell'SSID (stessa subnet).
 - Nessuna API key: meteo e mare da Open-Meteo, treni da Transitous.
 
-## Installazione
+## Installazione (venv nativo)
 
 ```powershell
 python -m pip install -e .
@@ -149,7 +149,58 @@ alla cadenza diurna. Per vedere l'anteprima notturna senza aspettare le 23: `ren
 Per tenerlo visibile: alimentazione da caricatore (non dalla porta USB del PC) e timeout schermo al
 massimo nelle impostazioni. Se compare il salvascherino, un tocco riporta la pagina.
 
-### Avvio automatico del server
+### Avvio con Docker (alternativa al venv)
+
+Se preferisci non installare Python e dipendenze sull'host, puoi usare Docker.  
+Requisiti: **Docker + Compose** (su Linux Mint/Ubuntu: `sudo apt install docker.io docker-compose`).
+
+```bash
+# 1. Build immagine (prima volta o dopo modifiche a Dockerfile/pyproject.toml)
+docker compose build
+
+# 2. Avvia server in background (porta 8787)
+docker compose up -d
+
+# 3. Verifica
+curl http://localhost:8787/health      # → ok
+curl http://localhost:8787/panel.png -o /tmp/test.png && file /tmp/test.png
+```
+
+**Comandi utili**
+
+| Operazione | Comando |
+|------------|---------|
+| Log live | `docker compose logs -f` |
+| Ferma (mantieni container) | `docker compose stop` |
+| Riavvia | `docker compose start` |
+| Ricarica config cambiata | `docker compose restart` |
+| Rimuovi tutto (container + network) | `docker compose down` |
+| Render one-shot (senza server) | `docker compose run --rm dashboard render -o /home/appuser/preview.png` |
+
+**Volumi montati** (stessi file del venv):
+- `./config.toml` → `/home/appuser/config.toml` (read-only)
+- `./cache/` → `/home/appuser/cache/` (read-write)
+
+> **Nota**: il file `config.toml` deve esistere prima del primo `up`. Copialo da `config.example.toml` e modificalo.
+
+---
+
+### Deploy su target remoto (Raspberry Pi, thin client, VPS)
+
+```bash
+# Sul target
+git clone <repo-url> kindle_dashboard
+cd kindle_dashboard
+git checkout docker-support        # o tag di release
+cp config.example.toml config.toml
+vim config.toml                    # lat/lon, calendari, treni, ecc.
+docker compose up -d
+```
+Il Kindle punterà a `http://<ip-target>:8787/panel.html`.
+
+---
+
+### Avvio automatico del server (senza Docker)
 
 Il pannello si aggiorna solo se il server sul PC è acceso. Per non lanciarlo a mano:
 

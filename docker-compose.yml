@@ -1,0 +1,33 @@
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kindle-dashboard:local
+    container_name: kindle-dashboard
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./config.toml:/home/appuser/config.toml:ro
+      - ./cache:/home/appuser/cache
+      # Opzionale: hot-reload sorgenti in dev (sovrascrive COPY dell'immagine)
+      - ./kindle_dashboard:/home/appuser/kindle_dashboard:ro
+    environment:
+      - TZ=Europe/Rome
+      - KDASH_ICS_URL=${KDASH_ICS_URL:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8787/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    # Limiti risorse (best practice per Pi / VM piccole)
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
