@@ -24,6 +24,15 @@ ics_url = ""
 max_events = 4
 days_ahead = 7
 
+[waste]
+# Calendario della raccolta differenziata: un iCal **pubblico** con un evento all-day per ogni
+# giorno di raccolta e il materiale nel titolo (es. "Umido"). Se il calendario non è tuo, in
+# Google Calendar > Impostazioni > "Indirizzo pubblico in formato iCal" trovi l'URL `.../public/basic.ics`.
+# Vuoto = la colonna destra non viene disegnata e il calendario eventi resta a tutta larghezza.
+ics_url = ""
+# Giorni mostrati: oggi, domani e i successivi. I giorni senza raccolta compaiono come "niente".
+days = 3
+
 [trains]
 base_url = "https://api.transitous.org"
 # Partenze mostrate: la stazione di partenza (una sola per pannello).

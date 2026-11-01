@@ -50,6 +50,18 @@ class CalendarConfig:
 
 
 @dataclass(frozen=True)
+class WasteConfig:
+    """Calendario comunale della raccolta differenziata: un iCal pubblico, un evento per giorno."""
+
+    ics_url: str = ""
+    days: int = 3
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.ics_url)
+
+
+@dataclass(frozen=True)
 class TrainsConfig:
     base_url: str = "https://api.transitous.org"
     station: str = ""
@@ -81,6 +93,7 @@ class Config:
     panel: PanelConfig = field(default_factory=PanelConfig)
     weather: WeatherConfig = field(default_factory=WeatherConfig)
     calendar: CalendarConfig = field(default_factory=CalendarConfig)
+    waste: WasteConfig = field(default_factory=WasteConfig)
     trains: TrainsConfig = field(default_factory=TrainsConfig)
     render: RenderConfig = field(default_factory=RenderConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
@@ -114,6 +127,7 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
     panel = _section(data, "panel")
     weather = _section(data, "weather")
     calendar = _section(data, "calendar")
+    waste = _section(data, "waste")
     trains = _section(data, "trains")
     render = _section(data, "render")
     server = _section(data, "server")
@@ -165,6 +179,10 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
             ics_url=ics_url,
             max_events=_int(calendar, "max_events", 4, where="calendar", minimum=1, maximum=20),
             days_ahead=_int(calendar, "days_ahead", 7, where="calendar", minimum=1, maximum=60),
+        ),
+        waste=WasteConfig(
+            ics_url=_str(waste, "ics_url", "", where="waste").strip(),
+            days=_int(waste, "days", 3, where="waste", minimum=1, maximum=7),
         ),
         trains=TrainsConfig(
             base_url=_str(trains, "base_url", "https://api.transitous.org", where="trains").rstrip(

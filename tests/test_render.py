@@ -11,10 +11,12 @@ from kindle_dashboard.model import (
     Departure,
     PanelData,
     Sync,
+    WasteDay,
     Weather,
     WeatherNow,
 )
 from kindle_dashboard.render import fonts
+from kindle_dashboard.render.layout import waste_day_label
 from kindle_dashboard.render.panel import _clock_label, _stop_label, _stop_line, render_panel
 from kindle_dashboard.timezone_utils import zone
 
@@ -42,6 +44,12 @@ def full_panel() -> PanelData:
             CalEvent(start=datetime(2026, 11, 1, 0, 0, tzinfo=TZ), summary="Ponte", all_day=True),
         ),
         events_sync=Sync(updated_at=NOW),
+        waste=(
+            WasteDay(day=date(2026, 10, 31), kinds=("Umido",)),
+            WasteDay(day=date(2026, 11, 1)),
+            WasteDay(day=date(2026, 11, 2), kinds=("Secco",)),
+        ),
+        waste_sync=Sync(updated_at=NOW),
         departures=(
             Departure(
                 scheduled=NOW,
@@ -195,3 +203,53 @@ def test_panel_with_intermediate_stops_stays_inside_the_canvas():
 
     assert image.size == (600, 800)
     assert image.getextrema()[0] == 0
+
+
+def test_waste_column_changes_the_layout_but_stays_on_canvas():
+    data = full_panel()
+    single_column = PanelData(
+        generated_at=data.generated_at,
+        timezone=data.timezone,
+        events=data.events,
+        events_sync=data.events_sync,
+    )
+
+    with_waste = render_panel(data)
+    without_waste = render_panel(single_column)
+
+    assert with_waste.size == (600, 800)
+    assert with_waste.tobytes() != without_waste.tobytes()
+
+
+def test_waste_day_labels_are_relative():
+    today = date(2026, 10, 31)
+
+    assert waste_day_label(today, today) == "OGGI"
+    assert waste_day_label(date(2026, 11, 1), today) == "DOMANI"
+    assert waste_day_label(date(2026, 11, 2), today) == "LUN"
+
+
+def test_long_waste_material_is_truncated_without_raising():
+    panel = PanelData(
+        generated_at=NOW,
+        timezone="Europe/Rome",
+        waste=(WasteDay(day=date(2026, 10, 31), kinds=("Plastica e metalli " * 4,)),),
+        waste_sync=Sync(updated_at=NOW),
+    )
+
+    assert render_panel(panel).size == (600, 800)
+
+
+def test_configured_but_empty_waste_section_shows_its_message():
+    panel = PanelData(
+        generated_at=NOW,
+        timezone="Europe/Rome",
+        waste=(),
+        waste_sync=Sync(error="calendar.example: HTTP 500"),
+    )
+    empty = PanelData(generated_at=NOW, timezone="Europe/Rome")
+
+    image = render_panel(panel)
+
+    assert image.size == (600, 800)
+    assert image.tobytes() != render_panel(empty).tobytes()

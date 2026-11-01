@@ -90,7 +90,11 @@ Errori realmente accaduti qui, da non ripetere:
 15. **Un `serve` già in ascolto fa fallire in silenzio il riavvio**: con più processi `python -m
     kindle_dashboard serve` avviati nel tempo il bind della porta fallisce, resta attiva l'istanza
     vecchia e sembra che le modifiche "non abbiano effetto". Prima di dire "riavviato" controllare
-    `Get-NetTCPConnection -LocalPort 8787 -State Listen` e il PID che risponde.
+    `Get-NetTCPConnection -LocalPort 8787 -State Listen` e il PID che risponde. Il processo tiene il
+    **codice in memoria**: la raccolta dati ogni 5 s non ricarica il modulo, quindi dopo una modifica
+    al renderer serve un riavvio. La prova che manca è confrontare `(Get-Process -Id <pid>).StartTime`
+    con l'ora delle modifiche: se il processo è più vecchio, il PNG vecchio è quello che sta servendo
+    davvero e non c'è nessuna cache del browser da incolpare.
 16. **I browser mobili ignorano `Cache-Control: no-store` su un `<img>` con URL fisso**: l'HTML deve
     referenziare `/panel.png?t=<epoch>`, altrimenti si continua a vedere il pannello vecchio.
 

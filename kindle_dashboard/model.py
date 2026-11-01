@@ -44,6 +44,14 @@ class CalEvent:
 
 
 @dataclass(frozen=True)
+class WasteDay:
+    """Un giorno del calendario rifiuti; ``kinds`` vuoto significa nessuna raccolta quel giorno."""
+
+    day: date
+    kinds: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class CallAt:
     """Fermata intermedia di un treno, con l'orario previsto."""
 
@@ -94,6 +102,11 @@ class PanelData:
     weather_sync: Sync = field(default_factory=Sync)
     events: tuple[CalEvent, ...] = ()
     events_sync: Sync = field(default_factory=Sync)
+    # None = sezione non configurata (la colonna destra non viene disegnata); () = configurata
+    # ma senza dati utilizzabili, così il renderer distingue "spenta" da "vuota" senza leggere
+    # il testo dell'errore.
+    waste: tuple[WasteDay, ...] | None = None
+    waste_sync: Sync = field(default_factory=Sync)
     departures: tuple[Departure, ...] = ()
     departures_sync: Sync = field(default_factory=Sync)
     location_name: str = ""

@@ -1,4 +1,4 @@
-"""Composizione del pannello: header, meteo, calendario, treni, footer.
+"""Composizione del pannello: header, meteo, calendario, differenziata, treni, footer.
 
 Tutte le misure derivano da ``height / 800``: cambiando risoluzione il layout scala, anche se è
 tarato sulle proporzioni del Kindle 4 (600x800).
@@ -16,7 +16,7 @@ from ..model import CalEvent, Departure, PanelData, Sync, Weather
 from ..sources import weather as weather_source
 from . import fonts, icons
 from .fonts import Font
-from .layout import date_label, divider, fit_text, relative_day
+from .layout import date_label, divider, fit_text, relative_day, waste_day_label
 
 DEFAULT_SIZE = (600, 800)
 _BASE_HEIGHT = 800
@@ -24,6 +24,10 @@ _TITLE_ROW_PX = 50
 _CALENDAR_ROW_PX = 44
 _TRAIN_ROW_PX = 44
 _STOPS_ROW_PX = 26
+# Spazio fra le due colonne dell'agenda e quota lasciata al calendario eventi: la differenziata
+# sta in piedi con "DOMANI" + un materiale, gli eventi hanno bisogno di più caratteri.
+_COLUMN_GUTTER_PX = 16
+_EVENTS_SHARE = 0.6
 
 
 @dataclass(frozen=True)
@@ -75,7 +79,7 @@ def render_panel(
 
     y = _draw_header(draw, style, data)
     y = _draw_forecast(draw, style, data, y)
-    y = _draw_calendar(draw, style, data, y, footer_top - trains_height)
+    y = _draw_agenda(draw, style, data, y, footer_top - trains_height)
     _draw_trains(draw, style, data, y, stop_priority)
     _draw_footer(draw, style, data)
     return image
@@ -202,12 +206,61 @@ def _draw_forecast(draw: ImageDraw.ImageDraw, style: _Style, data: PanelData, y:
     return y + style.px(54)
 
 
-def _draw_calendar(
+def _draw_agenda(
     draw: ImageDraw.ImageDraw, style: _Style, data: PanelData, y: int, bottom: int
 ) -> int:
-    y = _section_title(draw, style, y, "CALENDARIO", data.events_sync)
+    """Calendario eventi e, se configurata, la raccolta differenziata in una colonna a destra.
+
+    Senza ``[waste]`` la sezione resta a tutta larghezza come prima: la colonna in più è un dato
+    che si aggiunge, non un layout diverso da mantenere.
+    """
+    divider(draw, style.margin, style.right, y + style.px(16), thickness=style.px(2))
+    title_top = y + style.px(28)
+    rows_top = y + style.px(_TITLE_ROW_PX)
+
+    if data.waste is None:
+        _column_title(
+            draw, style, style.margin, title_top, "CALENDARIO", data.events_sync, style.content_width
+        )
+        return _draw_events(draw, style, data, rows_top, bottom, style.margin, style.right)
+
+    gutter = style.px(_COLUMN_GUTTER_PX)
+    events_right = style.margin + round((style.content_width - gutter) * _EVENTS_SHARE)
+    waste_left = events_right + gutter
+    events_width = events_right - style.margin
+    waste_width = style.right - waste_left
+
+    _column_title(draw, style, style.margin, title_top, "CALENDARIO", data.events_sync, events_width)
+    _column_title(draw, style, waste_left, title_top, "DIFFERENZIATA", data.waste_sync, waste_width)
+    events_bottom = _draw_events(draw, style, data, rows_top, bottom, style.margin, events_right)
+    waste_bottom = _draw_waste(draw, style, data, rows_top, bottom, waste_left, style.right)
+
+    separator = events_right + gutter // 2
+    line_bottom = max(events_bottom, waste_bottom) - style.px(8)
+    draw.rectangle(
+        [separator, title_top, separator + max(1, style.px(1)), line_bottom], fill="black"
+    )
+    return max(events_bottom, waste_bottom)
+
+
+def _draw_events(
+    draw: ImageDraw.ImageDraw,
+    style: _Style,
+    data: PanelData,
+    y: int,
+    bottom: int,
+    left: int,
+    right: int,
+) -> int:
     if not data.events:
-        return _message(draw, style, y, _section_text(data.events_sync, "nessun evento in vista"))
+        return _message(
+            draw,
+            style,
+            y,
+            _section_text(data.events_sync, "nessun evento in vista"),
+            left=left,
+            width=right - left,
+        )
 
     today = _moment(data).date()
     row = style.px(_CALENDAR_ROW_PX)
@@ -216,10 +269,51 @@ def _draw_calendar(
             break
         when = _event_when(event, today)
         when_width = max(style.px(52), style.body_font.getlength(when) + style.px(10))
-        draw.text((style.margin, y), when, font=style.body_font, fill="black")
+        draw.text((left, y), when, font=style.body_font, fill="black")
         draw.text(
-            (style.margin + when_width, y),
-            fit_text(event.summary, style.text_font, style.right - style.margin - when_width),
+            (left + when_width, y),
+            fit_text(event.summary, style.text_font, right - left - when_width),
+            font=style.text_font,
+            fill="black",
+        )
+        y += row
+    return y
+
+
+def _draw_waste(
+    draw: ImageDraw.ImageDraw,
+    style: _Style,
+    data: PanelData,
+    y: int,
+    bottom: int,
+    left: int,
+    right: int,
+) -> int:
+    """Un giorno per riga: ``niente`` dice che oggi non si porta fuori nulla."""
+    days = data.waste or ()
+    if not days:
+        return _message(
+            draw,
+            style,
+            y,
+            _section_text(data.waste_sync, "nessuna raccolta"),
+            left=left,
+            width=right - left,
+        )
+
+    today = _moment(data).date()
+    row = style.px(_CALENDAR_ROW_PX)
+    for item in days:
+        if y + row > bottom:
+            break
+        label = waste_day_label(item.day, today)
+        draw.text((left, y), label, font=style.body_font, fill="black")
+        kinds = ", ".join(item.kinds) if item.kinds else "niente"
+        available = right - left - style.body_font.getlength(label) - style.px(10)
+        kinds = fit_text(kinds, style.text_font, available)
+        draw.text(
+            (right - style.text_font.getlength(kinds), y + style.px(2)),
+            kinds,
             font=style.text_font,
             fill="black",
         )
@@ -346,7 +440,12 @@ def _draw_footer(draw: ImageDraw.ImageDraw, style: _Style, data: PanelData) -> N
     parts = [f"dati {data.generated_at.strftime('%H:%M')}"]
     if any(item.realtime for item in data.departures):
         parts.append("treni in tempo reale")
-    if data.weather_sync.stale or data.events_sync.stale or data.departures_sync.stale:
+    if (
+        data.weather_sync.stale
+        or data.events_sync.stale
+        or data.waste_sync.stale
+        or data.departures_sync.stale
+    ):
         parts.append("alcuni dati dalla cache")
     draw.text(
         (style.margin, style.height - style.margin - style.px(14)),
@@ -360,18 +459,40 @@ def _section_title(
     draw: ImageDraw.ImageDraw, style: _Style, y: int, title: str, sync: Sync
 ) -> int:
     divider(draw, style.margin, style.right, y + style.px(16), thickness=style.px(2))
-    top = y + style.px(28)
-    text = title
-    if sync.stale and sync.updated_at is not None:
-        text = f"{title} · agg. {sync.updated_at.strftime('%H:%M')}"
-    draw.text((style.margin, top), text, font=style.title_font, fill="black")
+    _column_title(draw, style, style.margin, y + style.px(28), title, sync, style.content_width)
     return y + style.px(_TITLE_ROW_PX)
 
 
-def _message(draw: ImageDraw.ImageDraw, style: _Style, y: int, text: str) -> int:
+def _column_title(
+    draw: ImageDraw.ImageDraw,
+    style: _Style,
+    x: float,
+    top: int,
+    title: str,
+    sync: Sync,
+    width: float,
+) -> None:
+    """Titolo di sezione o di colonna: il suffisso "agg." compare solo se ci sta nella larghezza."""
+    text = title
+    if sync.stale and sync.updated_at is not None:
+        text = f"{title} · agg. {sync.updated_at.strftime('%H:%M')}"
     draw.text(
-        (style.margin, y),
-        fit_text(text, style.text_font, style.content_width),
+        (x, top), fit_text(text, style.title_font, width), font=style.title_font, fill="black"
+    )
+
+
+def _message(
+    draw: ImageDraw.ImageDraw,
+    style: _Style,
+    y: int,
+    text: str,
+    *,
+    left: float | None = None,
+    width: float | None = None,
+) -> int:
+    draw.text(
+        (style.margin if left is None else left, y),
+        fit_text(text, style.text_font, style.content_width if width is None else width),
         font=style.text_font,
         fill="black",
     )

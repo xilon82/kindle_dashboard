@@ -109,6 +109,7 @@ PanelData(
     night,               # modalità notte: al posto dell'ora compare NOTTE
     weather, weather_sync,
     events, events_sync,
+    waste, waste_sync,   # None = colonna differenziata spenta, () = configurata ma vuota
     departures, departures_sync,
     location_name, board_name,
 )
@@ -205,7 +206,21 @@ riconosce e scrive sul pannello *"calendario: serve l'URL iCal, non la pagina em
 calendario lo **sottoscrivi** e non è tuo, Google non fornisce l'indirizzo iCal: verificato con
 quattro varianti di URL pubblico, tutte `404`.
 
-### 4.5 Cache e degrado (`collect.py` + `cache.py`)
+### 4.5 Raccolta differenziata (`sources/waste.py`)
+
+Il calendario del comune è un ICS **pubblico** (`.../ical/<id>/public/basic.ics`) con una forma
+diversa da quella degli eventi: un `VEVENT` all-day per ogni giorno di raccolta, il materiale nel
+titolo (`Umido`, `Secco`, `Plastica`, `Carta`), nessuna `RRULE`. Non serve un secondo parser:
+`waste.fetch_payload` riusa `calendar.fetch_payload` (stessa validazione "è davvero un iCal") e
+`waste.parse` chiama `calendar.parse_events` su una finestra che parte dalla mezzanotte di oggi.
+
+L'unica logica propria è l'**allineamento della finestra**: il risultato ha esattamente `days`
+elementi, uno per giorno, con `kinds` vuoto quando quel giorno non si raccoglie nulla. Così il
+renderer non deve calcolare buchi e la domenica — che nel calendario reale è sempre scoperta —
+compare come `niente` invece di sparire. Il `limit` passato a `parse_events` è `days * 4` perché il
+suo tetto conta le occorrenze, non i giorni, e un giorno può avere più materiali.
+
+### 4.6 Cache e degrado (`collect.py` + `cache.py`)
 
 Per ogni sezione: `fetch → store(payload, istante) → parse`. Se il fetch fallisce: `load()` della
 cache, `parse` del payload salvato e `Sync(stale=True, updated_at=<quando>)`. Sul pannello il titolo
@@ -268,7 +283,8 @@ margin 22 → data → orologio → condizioni meteo
 ──────────────── divider
 METEO      3 colonne (icona + giorni)
 ────────────────
-CALENDARIO max 3 righe          (_CALENDAR_ROW_PX = 44)
+CALENDARIO │ DIFFERENZIATA    due colonne quando `[waste]` è configurata
+           │                  (_CALENDAR_ROW_PX = 44, gutter _COLUMN_GUTTER_PX = 16)
 ────────────────
 TRENI      spazio riservato in fondo (_TRAIN_ROW_PX = 44, + _STOPS_ROW_PX = 26 con fermate)
 footer     "dati HH:MM · treni in tempo reale"
@@ -276,7 +292,12 @@ footer     "dati HH:MM · treni in tempo reale"
 
 Regola: **i treni hanno lo spazio riservato in fondo**, perché sono il dato con la scadenza più
 stretta; se il calendario non ci sta si troncano le sue righe, non i treni. `render_panel` calcola
-l'altezza del blocco treni *prima* di disegnare e passa un limite (`bottom`) al blocco calendario.
+l'altezza del blocco treni *prima* di disegnare e passa un limite (`bottom`) al blocco agenda.
+
+Il blocco agenda (`_draw_agenda`) disegna **due colonne solo se `PanelData.waste` non è `None`**:
+la colonna eventi prende il 60% di `content_width - gutter`, la differenziata il resto, e il
+divisore verticale è alto quanto il contenuto. Con `[waste]` spenta il calendario resta a tutta
+larghezza come prima, quindi non esistono due layout da mantenere.
 
 ### 5.6 Riga delle fermate con priorità
 
@@ -494,6 +515,7 @@ kindle_dashboard/
   sources/weather.py   Open-Meteo: fetch + parse + codici WMO
   sources/trains.py    Transitous: stoptimes, trip, geocode
   sources/calendar.py  parser ICS (folding, RRULE, EXDATE, RECURRENCE-ID)
+  sources/waste.py     raccolta differenziata: finestra allineata ai giorni
   render/fonts.py      ricerca TTF con fallback
   render/icons.py      glifi meteo vettoriali
   render/layout.py     fit_text, divider, etichette di data

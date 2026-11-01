@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from PIL import ImageDraw
 
@@ -39,3 +39,12 @@ def date_label(day: date) -> str:
 def relative_day(day: date, today: date) -> str:
     """``OGGI``/``DOM``: compatto per le colonne strette."""
     return "OGGI" if day == today else WEEKDAYS[day.weekday()]
+
+
+def waste_day_label(day: date, today: date) -> str:
+    """``OGGI``/``DOMANI``, poi il giorno della settimana: nella colonna stretta le date non ci stanno."""
+    if day == today:
+        return "OGGI"
+    if day == today + timedelta(days=1):
+        return "DOMANI"
+    return WEEKDAYS[day.weekday()]

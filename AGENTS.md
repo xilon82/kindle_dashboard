@@ -65,6 +65,8 @@ lo specifica. Una sezione assente disattiva la relativa parte del pannello, non 
 3. Rispetta il budget verticale (`_TITLE_ROW_PX` per il titolo, costante di riga dedicata) e la
    regola "i treni hanno lo spazio riservato in fondo".
 4. Aggiorna `tests/test_render.py` e rigenera `preview.png`.
+5. Il blocco agenda (`_draw_agenda`) ha due colonne solo quando `PanelData.waste` non è `None`: le
+   larghezze vengono da `_EVENTS_SHARE` e `_COLUMN_GUTTER_PX`, non da pixel scelti a occhio.
 
 ### Nuovo comando CLI
 1. `commands.add_parser(..., parents=[common])` in `_build_parser()` (il parent fornisce `--config`).
@@ -79,7 +81,7 @@ restare allineate.
 
 | Comando | Cosa copre |
 |---|---|
-| `python -m pytest -q` | 72 test: parsing, ricorrenze ICS, config, pianificazione giorno/notte, cache, render, HTTP |
+| `python -m pytest -q` | 87 test: parsing, ricorrenze ICS, raccolta differenziata, config, pianificazione giorno/notte, cache, render, HTTP |
 | `python -m ruff check .` | stile (line-length 110, regole E/F/I/UP/B/SIM/RUF) |
 | `python -m kindle_dashboard render -o preview.png` | verifica visiva reale |
 
