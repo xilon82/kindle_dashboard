@@ -16,3 +16,6 @@ docs/
 kindle/
 tests/
 docker-compose.override.yml
+# Segreti locali: non devono viaggiare nel build context (contengono l'URL iCal segreto)
+config.toml
+config.local.toml

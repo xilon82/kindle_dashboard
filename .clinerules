@@ -103,6 +103,10 @@ Errori realmente accaduti qui, da non ripetere:
     nessun `wind_speed_10m_max`; dopo il passaggio ai nodi un fallback avrebbe mostrato km/h
     spacciati per nodi. Dopo un cambio di unità (o di campi) svuota `cache/` prima di rigenerare, e
     leggi i campi nuovi con gli helper tolleranti di `sources/values.py`.
+18. **Il container non è l'ambiente dei test**: `tests/` è escluso da `.dockerignore` e l'immagine non
+    installa `pytest`; in più l'`ENTRYPOINT` è la CLI, quindi `docker compose run --rm dashboard
+    pytest` risponde `invalid choice: 'pytest'`. Il gate resta nel venv (`python -m pytest -q`,
+    `python -m ruff check .`); per test in container serve un'immagine di sviluppo separata.
 
 ## §Workflow
 
@@ -121,6 +125,7 @@ Errori realmente accaduti qui, da non ripetere:
 | Vincolo operativo, errore da non ripetere, policy | `.clinerules` (qui) |
 | Architettura, invarianti, come estendere, mappa dei test | `AGENTS.md` |
 | Uso, configurazione, troubleshooting per l'utente | `README.md` |
+| Guida didattica su uno strumento (venv, Docker) | `docs/<strumento>.md` |
 | Perché di una scelta puntuale di codice | commento nel codice |
 
 Niente changelog: scrivi la regola riutilizzabile, non il diario delle modifiche.

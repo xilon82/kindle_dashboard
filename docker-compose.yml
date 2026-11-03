@@ -17,7 +17,8 @@ services:
       - TZ=Europe/Rome
       - KDASH_ICS_URL=${KDASH_ICS_URL:-}
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8787/health"]
+      # python:3.12-slim non include wget/curl: il controllo usa la stdlib.
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/health').status == 200 else 1)"]
       interval: 30s
       timeout: 3s
       retries: 3

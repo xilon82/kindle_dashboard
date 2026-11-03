@@ -39,9 +39,10 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/home/appuser/.local/bin:${PATH}"
 
-# Healthcheck (usato da docker-compose / orchestratori)
+# Healthcheck (usato da docker-compose / orchestratori). python:3.12-slim non include wget/curl:
+# il controllo usa la stdlib, così non serve aggiungere pacchetti solo per una riga di shell.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD wget -qO- http://localhost:8787/health || exit 1
+    CMD python -c "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/health').status == 200 else 1)"
 
 EXPOSE 8787
 ENTRYPOINT ["python", "-m", "kindle_dashboard"]

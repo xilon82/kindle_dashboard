@@ -97,7 +97,7 @@ restare allineate.
 
 | Comando | Cosa copre |
 |---|---|
-| `python -m pytest -q` | 129 test: parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP |
+| `python -m pytest -q` | 130 test: parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP |
 | `python -m ruff check .` | stile (line-length 110, regole E/F/I/UP/B/SIM/RUF) |
 | `python -m kindle_dashboard render -o preview.png` | verifica visiva reale |
 
@@ -105,6 +105,9 @@ restare allineate.
 - Isolamento obbligatorio: `monkeypatch` di `fetch_payload`/`get_json`, `tmp_path` per la cache,
   `FakeService` + `build_server()` per l'HTTP. Niente rete, niente filesystem utente, niente `G:\`.
 - I test del renderer asseriscono dimensioni, mode e contenuto: niente snapshot fragili sui pixel.
+- Il gate si esegue nel **venv**: il container di produzione non contiene `tests/` (escluso da
+  `.dockerignore`) e non installa `pytest`. `docker compose run --rm dashboard pytest` non è un
+  comando valido: l'`ENTRYPOINT` è la CLI (`python -m kindle_dashboard`). Vedi `docs/docker.md`.
 
 ## Verifiche sul device (aggiornato alle prove reali)
 
@@ -135,6 +138,8 @@ Ancora da confermare: comportamento della batteria con la pagina aperta per ore.
 | `.clinerules` | chi scrive codice: vincoli e gate di commit |
 | `AGENTS.md` | agenti/sviluppatori: architettura, estensioni, mappa dei test |
 | `docs/technical-walkthrough.md` | chi studia il progetto: percorso tecnico narrato, con i bug reali |
+| `docs/venv.md` | chi sviluppa: cosa isola un venv, come crearlo, vantaggi e limiti |
+| `docs/docker.md` | chi fa deploy: scelte dell'immagine, volumi, comandi, rollback, trappole |
 | `config.example.toml` | utente: modello di configurazione commentato |
 | `tests/` | sviluppatori: comportamento atteso, da aggiornare con le modifiche |
 | `kindle/` | deploy: estensione KUAL + script host |

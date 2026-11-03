@@ -17,12 +17,18 @@ FBInk. Un pannello non deve mai bloccarsi, quindi ogni sezione ha un fallback.
 
 ## Installazione (venv nativo)
 
+Da un venv dedicato, così le dipendenze non finiscono nell'ambiente globale:
+
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install -e .
 ```
 
 Su Windows il pacchetto `tzdata` è obbligatorio: il sistema non fornisce il database dei fusi
 orari usato da `zoneinfo`. È dichiarato in `pyproject.toml`, non serve installarlo a mano.
+
+Perché il venv, come ricrearlo, vantaggi e limiti rispetto a Docker: [docs/venv.md](docs/venv.md).
 
 ## Configurazione
 
@@ -152,7 +158,11 @@ massimo nelle impostazioni. Se compare il salvascherino, un tocco riporta la pag
 ### Avvio con Docker (alternativa al venv)
 
 Se preferisci non installare Python e dipendenze sull'host, puoi usare Docker.  
-Requisiti: **Docker + Compose** (su Linux Mint/Ubuntu: `sudo apt install docker.io docker-compose`).
+Requisiti: **Docker Engine + plugin Compose v2** (`docker compose`; su Ubuntu recente il pacchetto
+è `docker-compose-v2`, oppure si installa il plugin dal repository Docker). Su Windows/macOS basta
+Docker Desktop avviato.
+
+Guida didattica completa (scelte, volumi, trappole, rollback): [docs/docker.md](docs/docker.md).
 
 ```bash
 # 1. Build immagine (prima volta o dopo modifiche a Dockerfile/pyproject.toml)
@@ -175,11 +185,13 @@ curl http://localhost:8787/panel.png -o /tmp/test.png && file /tmp/test.png
 | Riavvia | `docker compose start` |
 | Ricarica config cambiata | `docker compose restart` |
 | Rimuovi tutto (container + network) | `docker compose down` |
-| Render one-shot (senza server) | `docker compose run --rm dashboard render -o /home/appuser/preview.png` |
+| Render one-shot (senza server) | `docker compose run --rm -v "${PWD}:/out" dashboard render -o /out/preview.png` |
 
 **Volumi montati** (stessi file del venv):
 - `./config.toml` → `/home/appuser/config.toml` (read-only)
 - `./cache/` → `/home/appuser/cache/` (read-write)
+- `./kindle_dashboard/` → `/home/appuser/kindle_dashboard/` (read-only, solo sviluppo: dopo una
+  modifica ai sorgenti serve `docker compose restart`, il processo tiene il codice in memoria)
 
 > **Nota**: il file `config.toml` deve esistere prima del primo `up`. Copialo da `config.example.toml` e modificalo.
 
@@ -308,6 +320,9 @@ Get-NetFirewallApplicationFilter | Where-Object { $_.Program -like '*python*' } 
 python -m ruff check .
 python -m pytest -q
 ```
+
+I due comandi girano nel venv ([docs/venv.md](docs/venv.md)); Docker serve al deploy, non al gate
+([docs/docker.md](docs/docker.md)).
 
 Architettura, invarianti e come estendere il progetto: [AGENTS.md](AGENTS.md).
 Percorso tecnico narrato (come funziona e perché, con i bug realmente incontrati):
