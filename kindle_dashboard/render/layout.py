@@ -19,12 +19,26 @@ COMPASS_POINTS = (
 )
 
 
-# Nomi tradizionali del Mediterraneo, uno per ottante. La rosa classica ha otto venti: i sedici
-# settori della bussola prendono il nome dell'ottante in cui cadono (NNE resta Tramontana), così
-# sigla e nome non possono raccontare direzioni diverse.
+# Nomi tradizionali del Mediterraneo, uno per settore. Gli intermedi sono composti dai due venti
+# principali in senso orario (ESE = Levante-Scirocco): "Levante" da solo racconterebbe una
+# direzione che non è quella indicata dalla sigla.
 WIND_NAMES = (
-    "Tramontana", "Grecale", "Levante", "Scirocco",
-    "Ostro", "Libeccio", "Ponente", "Maestrale",
+    "Tramontana",            # N
+    "Tramontana-Grecale",    # NNE
+    "Grecale",               # NE
+    "Grecale-Levante",       # ENE
+    "Levante",               # E
+    "Levante-Scirocco",      # ESE
+    "Scirocco",              # SE
+    "Scirocco-Ostro",        # SSE
+    "Ostro",                 # S
+    "Ostro-Libeccio",        # SSO
+    "Libeccio",              # SO
+    "Libeccio-Ponente",      # OSO
+    "Ponente",               # O
+    "Ponente-Maestrale",     # ONO
+    "Maestrale",             # NO
+    "Maestrale-Tramontana",  # NNO
 )
 
 
@@ -41,10 +55,10 @@ def compass(degrees: float | None) -> str:
 
 
 def wind_name(degrees: float | None) -> str:
-    """Nome tradizionale del vento (``Scirocco``) per la direzione di provenienza; vuoto se manca."""
+    """Nome tradizionale del vento (``Levante-Scirocco``) per la direzione; vuoto se manca."""
     if degrees is None:
         return ""
-    return WIND_NAMES[_sector(degrees) // 2]
+    return WIND_NAMES[_sector(degrees)]
 
 
 def fit_text(text: str, font: Font, max_width: float) -> str:

@@ -408,7 +408,7 @@ def test_wind_segments_keep_the_direction_and_add_the_traditional_name():
     assert [segment.text for segment in segments if segment.text] == [
         "15 kn",
         "NNE",
-        "· Tramontana",
+        "· Tramontana-Grecale",
     ]
     # La sigla resta obbligatoria; il nome è il di più che si toglie per primo.
     assert [segment.required for segment in segments if segment.text] == [True, True, False]
@@ -471,18 +471,26 @@ def test_sun_segments_are_empty_without_a_forecast():
     ("degrees", "expected"),
     [
         (0, "Tramontana"),
-        (18, "Tramontana"),
+        (18, "Tramontana-Grecale"),
         (45, "Grecale"),
+        (68, "Grecale-Levante"),
         (90, "Levante"),
+        (113, "Levante-Scirocco"),
         (137, "Scirocco"),
+        (158, "Scirocco-Ostro"),
         (180, "Ostro"),
+        (203, "Ostro-Libeccio"),
         (225, "Libeccio"),
+        (248, "Libeccio-Ponente"),
         (270, "Ponente"),
+        (293, "Ponente-Maestrale"),
         (315, "Maestrale"),
+        (340, "Maestrale-Tramontana"),
+        (359, "Tramontana"),
         (None, ""),
     ],
 )
-def test_wind_name_uses_the_eight_traditional_winds(degrees, expected):
+def test_wind_name_covers_all_sixteen_sectors(degrees, expected):
     assert wind_name(degrees) == expected
 
 

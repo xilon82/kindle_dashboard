@@ -306,17 +306,21 @@ def _draw_balanced_row(
     right: Sequence[_Segment],
     top: int,
 ) -> None:
-    """Riga a due colonne: il blocco destro si misura per primo perché è allineato al bordo.
+    """Riga a due colonne: il blocco sinistro ha la precedenza, il destro riceve il resto.
 
-    Ognuno ha metà della larghezza come budget e cede i propri pezzi non obbligatori dentro
-    ``_fit_inline``: i due blocchi non possono sovrapporsi nemmeno con la finestra stretta.
+    Serve al vento: ``Maestrale-Tramontana`` è lungo e con una quota fissa a metà riga verrebbe
+    scartato. Il destro scende sotto metà larghezza solo quando il sinistro la occupa davvero, e
+    a cedere è la temperatura dell'acqua, non il nome del vento.
     """
     icon_size = style.px(20)
     gap = style.px(_INLINE_GAP_PX)
+    gutter = style.px(_HEADER_GAP_PX)
     share = style.content_width / 2
-    fitted_right = _fit_inline(right, style.text_font, icon_size, gap, share)
+    wanted_left = _inline_width(left, style.text_font, icon_size, gap)
+    right_budget = min(share, max(0.0, style.content_width - wanted_left - gutter))
+    fitted_right = _fit_inline(right, style.text_font, icon_size, gap, right_budget)
     right_width = _inline_width(fitted_right, style.text_font, icon_size, gap)
-    left_budget = style.content_width - right_width - style.px(_HEADER_GAP_PX)
+    left_budget = style.content_width - right_width - gutter
     fitted_left = _fit_inline(left, style.text_font, icon_size, gap, left_budget)
     _draw_inline(draw, style, fitted_left, style.margin, top, font=style.text_font, icon_size=icon_size)
     _draw_inline(

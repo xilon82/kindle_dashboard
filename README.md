@@ -90,10 +90,10 @@ La parte alta del pannello è a due colonne:
 - a destra il luogo, l'icona del meteo con la temperatura, la **percepita** e la **probabilità di
   pioggia** nelle prossime sei ore (ombrello), la descrizione e il mare.
 
-Il nome del vento è la rosa tradizionale a otto venti: i sedici settori della bussola prendono il
-nome dell'ottante in cui cadono (`NNE` resta Tramontana). Se la fonte non fornisce alba/tramonto
-(cache scritta prima di questi campi) la descrizione torna al posto degli orari, così la riga non
-resta vuota.
+Il nome del vento segue la rosa a 16 settori: ogni direzione ha il suo nome e gli intermedi sono
+composti dai due venti principali in senso orario (`ESE` = Levante-Scirocco, `NNO` =
+Maestrale-Tramontana). Se la fonte non fornisce alba/tramonto (cache scritta prima di questi campi)
+la descrizione torna al posto degli orari, così la riga non resta vuota.
 
 ### Mare
 

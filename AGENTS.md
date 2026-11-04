@@ -42,9 +42,10 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    prossimo cambio. Server e renderer leggono quel risultato, non lo ricalcolano.
 8. **Il vento è in nodi** (`wind_speed_unit=kn`): modello, header e striscia usano la stessa unità e
    nessuno converte nel renderer. La direzione si scrive a 16 settori (`NNE`) ed è **obbligatoria**:
-   sulla riga del vento cede il nome tradizionale (`· Tramontana`), non la sigla. Il nome viene da
-   `layout.wind_name()`, che riusa lo stesso indice a 16 settori di `compass()` ridotto a 8 ottanti,
-   così sigla e nome non possono divergere. Il mare viene dalle coordinate di `[location]`, non da
+   sulla riga del vento cede il nome tradizionale (`· Levante-Scirocco`), non la sigla. Il nome
+   viene da `layout.wind_name()`, che usa lo stesso indice a 16 settori di `compass()`: gli
+   intermedi sono composti dai due venti principali (`ESE` = Levante-Scirocco), così sigla e nome
+   non possono divergere. Il mare viene dalle coordinate di `[location]`, non da
    una sezione con coordinate proprie, e la sua classificazione (forza Douglas, parola, glifo) è
    una tabella sola in `sources/marine.py`.
 9. **Le righe miste testo+icona passano da `_draw_inline`**: i pezzi sono `_Segment` con `required`
@@ -101,7 +102,7 @@ restare allineate.
 
 | Comando | Cosa copre |
 |---|---|
-| `python -m pytest -q` | 145 test: parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP |
+| `python -m pytest -q` | 153 test: parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP |
 | `python -m ruff check .` | stile (line-length 110, regole E/F/I/UP/B/SIM/RUF) |
 | `python -m kindle_dashboard render -o preview.png` | verifica visiva reale |
 
