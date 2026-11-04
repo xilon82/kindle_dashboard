@@ -54,8 +54,9 @@ chmod +x ~/.docker/cli-plugins/docker-compose
 docker compose version
 ```
 
-In alternativa, dal repository Docker: `sudo apt-get install docker-compose-plugin` (o
-`docker-compose-v2`). Nel frattempo un riavvio si fa lo stesso con `docker restart
+In alternativa, **se hai aggiunto il repository apt di Docker** (`download.docker.com`, non quello di
+Mint/Ubuntu dove il pacchetto non esiste): `sudo apt-get install docker-compose-plugin`; su Ubuntu
+24.04 c'è anche `docker-compose-v2`. Nel frattempo un riavvio si fa lo stesso con `docker restart
 kindle-dashboard`: il nome del container è fissato da `container_name`, quindi equivale a
 `docker compose restart`.
 
