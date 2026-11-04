@@ -21,18 +21,20 @@ from kindle_dashboard.model import (
     WeatherNow,
 )
 from kindle_dashboard.render import fonts
-from kindle_dashboard.render.layout import compass, waste_day_label
+from kindle_dashboard.render.layout import compass, waste_day_label, wind_name
 from kindle_dashboard.render.panel import (
     _clock_label,
-    _condition_segments,
     _fit_inline,
     _icon_top,
     _inline_width,
+    _now_detail_segments,
     _sea_day_segments,
     _sea_segments,
     _stop_label,
     _stop_line,
+    _sun_segments,
     _text,
+    _wind_segments,
     render_panel,
 )
 from kindle_dashboard.timezone_utils import zone
@@ -49,7 +51,12 @@ def full_panel() -> PanelData:
         board_name="Genova Brignole",
         weather=Weather(
             now=WeatherNow(
-                temperature=16.6, code=2, apparent=15.9, wind_kn=8.4, wind_direction=18
+                temperature=16.6,
+                code=2,
+                apparent=15.9,
+                wind_kn=8.4,
+                wind_direction=18,
+                rain_probability=40,
             ),
             days=(
                 DayForecast(
@@ -59,6 +66,8 @@ def full_panel() -> PanelData:
                     t_max=19.1,
                     wind_kn=11.1,
                     wind_direction=13,
+                    sunrise=datetime(2026, 10, 31, 6, 47, tzinfo=TZ),
+                    sunset=datetime(2026, 10, 31, 17, 2, tzinfo=TZ),
                 ),
                 DayForecast(
                     day=date(2026, 11, 1),
@@ -386,24 +395,95 @@ def test_fit_inline_truncates_the_last_text_when_nothing_can_be_dropped():
     assert _inline_width(fitted, font, 18, 6) <= 60
 
 
-def test_wind_direction_is_required_in_the_status_line():
-    """Il vento non deve perdere la direzione: è il mare a cedere spazio, non lui."""
+def test_wind_segments_keep_the_direction_and_add_the_traditional_name():
+    """Il vento non perde la direzione; il nome tradizionale è il pezzo che può cedere."""
     weather = Weather(
         now=WeatherNow(temperature=16.6, code=2, apparent=9.0, wind_kn=15.0, wind_direction=18),
         days=(),
     )
 
-    segments = _condition_segments(weather)
+    segments = _wind_segments(weather)
 
-    # Il percepito usa il glifo "persona": è quello che sente il corpo, non un termometro.
-    assert segments[1].icon == "person"
+    assert segments[0].icon == "wind"
     assert [segment.text for segment in segments if segment.text] == [
-        "poco nuvoloso",
-        "9°",
         "15 kn",
         "NNE",
+        "· Tramontana",
     ]
-    assert all(segment.required for segment in segments)
+    # La sigla resta obbligatoria; il nome è il di più che si toglie per primo.
+    assert [segment.required for segment in segments if segment.text] == [True, True, False]
+
+
+def test_now_details_pair_apparent_with_rain_probability():
+    weather = Weather(
+        now=WeatherNow(temperature=16.6, code=2, apparent=15.9, rain_probability=40),
+        days=(),
+    )
+
+    segments = _now_detail_segments(weather)
+    without_rain = _now_detail_segments(weather, with_rain=False)
+
+    # Il percepito usa il glifo "persona": è quello che sente il corpo, non un termometro.
+    assert [segment.icon for segment in segments if segment.icon] == ["person", "umbrella"]
+    assert [segment.text for segment in segments if segment.text] == ["16°", "40%"]
+    assert [segment.text for segment in without_rain if segment.text] == ["16°"]
+
+
+def test_now_details_are_empty_when_the_weather_has_no_extras():
+    weather = Weather(now=WeatherNow(temperature=16.6, code=2), days=())
+
+    assert _now_detail_segments(weather) == ()
+
+
+def test_sun_segments_show_both_times_with_arrows():
+    day = DayForecast(
+        day=date(2026, 10, 31),
+        code=2,
+        t_min=12.0,
+        t_max=19.1,
+        sunrise=datetime(2026, 10, 31, 6, 47, tzinfo=TZ),
+        sunset=datetime(2026, 10, 31, 17, 2, tzinfo=TZ),
+    )
+
+    segments = _sun_segments(day)
+
+    assert [segment.icon for segment in segments if segment.icon] == [
+        "sunrise",
+        "arrow_up",
+        "sunset",
+        "arrow_down",
+    ]
+    assert [segment.text for segment in segments if segment.text] == ["06:47", "17:02"]
+    # Le frecce sono l'unico pezzo che può cedere: gli orari restano.
+    assert [segment.required for segment in segments if segment.icon] == [
+        True,
+        False,
+        True,
+        False,
+    ]
+
+
+def test_sun_segments_are_empty_without_a_forecast():
+    assert _sun_segments(None) == ()
+
+
+@pytest.mark.parametrize(
+    ("degrees", "expected"),
+    [
+        (0, "Tramontana"),
+        (18, "Tramontana"),
+        (45, "Grecale"),
+        (90, "Levante"),
+        (137, "Scirocco"),
+        (180, "Ostro"),
+        (225, "Libeccio"),
+        (270, "Ponente"),
+        (315, "Maestrale"),
+        (None, ""),
+    ],
+)
+def test_wind_name_uses_the_eight_traditional_winds(degrees, expected):
+    assert wind_name(degrees) == expected
 
 
 def test_sea_block_shows_state_height_and_water_temperature():

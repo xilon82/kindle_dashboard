@@ -21,6 +21,9 @@ class WeatherNow:
     precipitation_mm: float | None = None
     wind_kn: float | None = None
     wind_direction: int | None = None
+    # Probabilità massima di pioggia nelle prossime ore: il dato orario di Open-Meteo ridotto a
+    # un numero, così il renderer non deve leggere serie temporali.
+    rain_probability: int | None = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,9 @@ class DayForecast:
     t_max: float
     wind_kn: float | None = None
     wind_direction: int | None = None
+    # Alba e tramonto aware, nel fuso di ``config.weather.timezone``: il renderer formatta e basta.
+    sunrise: datetime | None = None
+    sunset: datetime | None = None
 
 
 @dataclass(frozen=True)

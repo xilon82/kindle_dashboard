@@ -41,14 +41,18 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
 7. **L'intervallo di aggiornamento si calcola solo in `schedule.py`**: fascia corrente e clamp al
    prossimo cambio. Server e renderer leggono quel risultato, non lo ricalcolano.
 8. **Il vento è in nodi** (`wind_speed_unit=kn`): modello, header e striscia usano la stessa unità e
-   nessuno converte nel renderer. La direzione si scrive a 16 settori (`NNE`) ed è **obbligatoria**
-   sulla riga condizioni: quando lo spazio manca cede il mare, non il vento. Il mare viene dalle
-   coordinate di `[location]`, non da una sezione con coordinate proprie, e la sua classificazione
-   (forza Douglas, parola, glifo) è una tabella sola in `sources/marine.py`.
+   nessuno converte nel renderer. La direzione si scrive a 16 settori (`NNE`) ed è **obbligatoria**:
+   sulla riga del vento cede il nome tradizionale (`· Tramontana`), non la sigla. Il nome viene da
+   `layout.wind_name()`, che riusa lo stesso indice a 16 settori di `compass()` ridotto a 8 ottanti,
+   così sigla e nome non possono divergere. Il mare viene dalle coordinate di `[location]`, non da
+   una sezione con coordinate proprie, e la sua classificazione (forza Douglas, parola, glifo) è
+   una tabella sola in `sources/marine.py`.
 9. **Le righe miste testo+icona passano da `_draw_inline`**: i pezzi sono `_Segment` con `required`
-   falso quando possono cedere (temperatura dell'acqua nell'header, direzione nella striscia).
+   falso quando possono cedere (temperatura dell'acqua, nome del vento, frecce di alba/tramonto).
    Larghezze sempre da `font.getlength`, mai pixel scelti a occhio, e le icone si allineano al
-   **centro dell'inchiostro** del testo via `_icon_top`, non al bordo del riquadro del font.
+   **centro dell'inchiostro** del testo via `_icon_top`, non al bordo del riquadro del font. Le
+   righe 5 e 6 dell'intestazione sono a due colonne dentro `_draw_balanced_row`: il blocco destro si
+   misura per primo (è allineato al bordo) e quello sinistro riceve lo spazio che resta.
 
 ### Configurazione
 
@@ -97,7 +101,7 @@ restare allineate.
 
 | Comando | Cosa copre |
 |---|---|
-| `python -m pytest -q` | 130 test: parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP |
+| `python -m pytest -q` | 145 test: parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP |
 | `python -m ruff check .` | stile (line-length 110, regole E/F/I/UP/B/SIM/RUF) |
 | `python -m kindle_dashboard render -o preview.png` | verifica visiva reale |
 

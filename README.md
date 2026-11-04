@@ -81,12 +81,26 @@ L'URL è pubblico e non è una credenziale, quindi niente variabile d'ambiente. 
 all'intervallo coperto dal calendario: quello di Santa Marinella arriva dal 01/06/2026 al 31/12/2026,
 quindi fuori da quelle date la colonna mostra solo `niente` finché il comune non lo aggiorna.
 
+### Intestazione
+
+La parte alta del pannello è a due colonne:
+
+- a sinistra data e orologio; sotto, **alba e tramonto** con il sole sul filo dell'orizzonte e la
+  freccia su/giù, poi il **vento** in nodi con direzione e nome tradizionale (`6 kn ESE · Levante`);
+- a destra il luogo, l'icona del meteo con la temperatura, la **percepita** e la **probabilità di
+  pioggia** nelle prossime sei ore (ombrello), la descrizione e il mare.
+
+Il nome del vento è la rosa tradizionale a otto venti: i sedici settori della bussola prendono il
+nome dell'ottante in cui cadono (`NNE` resta Tramontana). Se la fonte non fornisce alba/tramonto
+(cache scritta prima di questi campi) la descrizione torna al posto degli orari, così la riga non
+resta vuota.
+
 ### Mare
 
 Con `sea.enabled = true` il pannello aggiunge le condizioni del mare dalle **stesse coordinate di
 `[location]`** (Open-Meteo Marine API, nessuna chiave):
 
-- sulla riga delle condizioni, allineato a destra: stato in parole, altezza d'onda e temperatura
+- nella riga del vento, nella colonna di destra: stato in parole, altezza d'onda e temperatura
   dell'acqua (`poco mosso 0.6m 21°`);
 - sotto ciascuna delle tre giornate: **forza Douglas** (`F3`), altezza d'onda, vento massimo in nodi
   e direzione (`F3 1.3m 21 kn NNE`). La forza costa 15 px contro i 75 di `poco mosso`: è ciò che fa

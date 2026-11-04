@@ -60,7 +60,9 @@ def _weather(
             days=config.weather.days,
             timezone=config.timezone,
         )
-        weather = weather_source.parse(payload, days=config.weather.days)
+        weather = weather_source.parse(
+            payload, days=config.weather.days, timezone=config.timezone
+        )
     except SourceError as exc:
         return _weather_from_cache(cache, config, exc)
     cache.store("weather", payload, moment)
@@ -75,9 +77,9 @@ def _weather_from_cache(
         return None, Sync(error=str(error))
     payload, saved_at = cached
     try:
-        return weather_source.parse(payload, days=config.weather.days), Sync(
-            updated_at=saved_at, error=str(error), stale=True
-        )
+        return weather_source.parse(
+            payload, days=config.weather.days, timezone=config.timezone
+        ), Sync(updated_at=saved_at, error=str(error), stale=True)
     except SourceError:
         return None, Sync(error=str(error))
 
