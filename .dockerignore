@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.png
+preview.png
+cache/
+*.log
+.git/
+.gitignore
+docs/
+kindle/
+tests/
+docker-compose.override.yml
+# Segreti locali: non devono viaggiare nel build context (contengono l'URL iCal segreto)
+config.toml
+config.local.toml

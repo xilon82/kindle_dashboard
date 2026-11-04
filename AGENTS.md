@@ -41,14 +41,19 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
 7. **L'intervallo di aggiornamento si calcola solo in `schedule.py`**: fascia corrente e clamp al
    prossimo cambio. Server e renderer leggono quel risultato, non lo ricalcolano.
 8. **Il vento è in nodi** (`wind_speed_unit=kn`): modello, header e striscia usano la stessa unità e
-   nessuno converte nel renderer. La direzione si scrive a 16 settori (`NNE`) ed è **obbligatoria**
-   sulla riga condizioni: quando lo spazio manca cede il mare, non il vento. Il mare viene dalle
-   coordinate di `[location]`, non da una sezione con coordinate proprie, e la sua classificazione
-   (forza Douglas, parola, glifo) è una tabella sola in `sources/marine.py`.
+   nessuno converte nel renderer. La direzione si scrive a 16 settori (`NNE`) ed è **obbligatoria**:
+   sulla riga del vento cede il nome tradizionale (`· Levante-Scirocco`), non la sigla. Il nome
+   viene da `layout.wind_name()`, che usa lo stesso indice a 16 settori di `compass()`: gli
+   intermedi sono composti dai due venti principali (`ESE` = Levante-Scirocco), così sigla e nome
+   non possono divergere. Il mare viene dalle coordinate di `[location]`, non da
+   una sezione con coordinate proprie, e la sua classificazione (forza Douglas, parola, glifo) è
+   una tabella sola in `sources/marine.py`.
 9. **Le righe miste testo+icona passano da `_draw_inline`**: i pezzi sono `_Segment` con `required`
-   falso quando possono cedere (temperatura dell'acqua nell'header, direzione nella striscia).
+   falso quando possono cedere (temperatura dell'acqua, nome del vento, frecce di alba/tramonto).
    Larghezze sempre da `font.getlength`, mai pixel scelti a occhio, e le icone si allineano al
-   **centro dell'inchiostro** del testo via `_icon_top`, non al bordo del riquadro del font.
+   **centro dell'inchiostro** del testo via `_icon_top`, non al bordo del riquadro del font. Le
+   righe 5 e 6 dell'intestazione sono a due colonne dentro `_draw_balanced_row`: il blocco destro si
+   misura per primo (è allineato al bordo) e quello sinistro riceve lo spazio che resta.
 
 ### Configurazione
 
@@ -97,7 +102,7 @@ restare allineate.
 
 | Comando | Cosa copre |
 |---|---|
-| `python -m pytest -q` | 129 test: parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP |
+| `python -m pytest -q` | 153 test: parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP |
 | `python -m ruff check .` | stile (line-length 110, regole E/F/I/UP/B/SIM/RUF) |
 | `python -m kindle_dashboard render -o preview.png` | verifica visiva reale |
 
@@ -105,6 +110,9 @@ restare allineate.
 - Isolamento obbligatorio: `monkeypatch` di `fetch_payload`/`get_json`, `tmp_path` per la cache,
   `FakeService` + `build_server()` per l'HTTP. Niente rete, niente filesystem utente, niente `G:\`.
 - I test del renderer asseriscono dimensioni, mode e contenuto: niente snapshot fragili sui pixel.
+- Il gate si esegue nel **venv**: il container di produzione non contiene `tests/` (escluso da
+  `.dockerignore`) e non installa `pytest`. `docker compose run --rm dashboard pytest` non è un
+  comando valido: l'`ENTRYPOINT` è la CLI (`python -m kindle_dashboard`). Vedi `docs/docker.md`.
 
 ## Verifiche sul device (aggiornato alle prove reali)
 
@@ -135,6 +143,8 @@ Ancora da confermare: comportamento della batteria con la pagina aperta per ore.
 | `.clinerules` | chi scrive codice: vincoli e gate di commit |
 | `AGENTS.md` | agenti/sviluppatori: architettura, estensioni, mappa dei test |
 | `docs/technical-walkthrough.md` | chi studia il progetto: percorso tecnico narrato, con i bug reali |
+| `docs/venv.md` | chi sviluppa: cosa isola un venv, come crearlo, vantaggi e limiti |
+| `docs/docker.md` | chi fa deploy: scelte dell'immagine, volumi, comandi, rollback, trappole |
 | `config.example.toml` | utente: modello di configurazione commentato |
 | `tests/` | sviluppatori: comportamento atteso, da aggiornare con le modifiche |
 | `kindle/` | deploy: estensione KUAL + script host |

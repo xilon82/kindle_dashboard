@@ -34,3 +34,15 @@ def series_int(series: object, index: int) -> int | None:
     if not isinstance(series, list) or index >= len(series):
         return None
     return optional_int(series[index])
+
+
+def series_text(series: object, index: int) -> str | None:
+    """Testo ``index`` di una serie giornaliera opzionale (es. ``daily.sunrise``).
+
+    ``None`` anche per stringhe vuote: una cache scritta prima del campo deve restare
+    ri-analizzabile, e ``""`` non è un orario da mostrare.
+    """
+    if not isinstance(series, list) or index >= len(series):
+        return None
+    value = series[index]
+    return value.strip() if isinstance(value, str) and value.strip() else None

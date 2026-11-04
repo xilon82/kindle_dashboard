@@ -52,6 +52,14 @@ def draw_icon(draw: ImageDraw.ImageDraw, kind: str, box: tuple[int, int, int, in
         _wind(draw, left, top, size, stroke)
     elif kind == "person":
         _person(draw, left, top, size)
+    elif kind == "sunrise":
+        _horizon_sun(draw, left, top, size, stroke)
+    elif kind == "sunset":
+        _horizon_sun(draw, left, top, size, stroke, setting=True)
+    elif kind in {"arrow_up", "arrow_down"}:
+        _arrow(draw, left, top, size, stroke, up=kind == "arrow_up")
+    elif kind == "umbrella":
+        _umbrella(draw, left, top, size, stroke)
     else:
         _cloud(draw, left, top, size, size * 0.8)
 
@@ -177,6 +185,92 @@ def _wind(draw: ImageDraw.ImageDraw, left: float, top: float, size: int, stroke:
         [left + size * 0.06, top + size * 0.80, left + size * 0.30, top + size * 0.80],
         fill="black",
         width=thin,
+    )
+
+
+def _horizon_sun(
+    draw: ImageDraw.ImageDraw, left: float, top: float, size: int, stroke: int, *, setting: bool = False
+) -> None:
+    """Sole sul filo dell'orizzonte: semicerchio pieno sopra una linea di terreno.
+
+    Alba e tramonto condividono il glifo e si distinguono per l'altezza dell'orizzonte più la
+    freccia nella riga: a 16-20 px un sole intero con i raggi sarebbe una macchia.
+    """
+    radius = size * 0.28
+    center_x = left + size * 0.5
+    ground = top + size * (0.62 if setting else 0.80)
+    draw.pieslice(
+        [center_x - radius, ground - radius, center_x + radius, ground + radius],
+        180,
+        360,
+        fill="black",
+    )
+    draw.line([left + size * 0.02, ground, left + size * 0.98, ground], fill="black", width=stroke)
+    thin = max(2, stroke - 1)
+    for dx in (-1.0, 0.0, 1.0):
+        draw.line(
+            [
+                center_x + dx * radius * 1.45,
+                ground - radius * 1.35,
+                center_x + dx * radius * 2.05,
+                ground - radius * 2.0,
+            ],
+            fill="black",
+            width=thin,
+        )
+
+
+def _arrow(draw: ImageDraw.ImageDraw, left: float, top: float, size: int, stroke: int, *, up: bool) -> None:
+    """Freccia verticale: dice se il sole sale (alba) o scende (tramonto)."""
+    mid_x = left + size * 0.5
+    head = size * 0.26
+    if up:
+        draw.line([mid_x, top + size * 0.20, mid_x, top + size * 0.78], fill="black", width=stroke)
+        draw.polygon(
+            [(mid_x - head, top + size * 0.32), (mid_x + head, top + size * 0.32),
+             (mid_x, top + size * 0.06)],
+            fill="black",
+        )
+    else:
+        draw.line([mid_x, top + size * 0.22, mid_x, top + size * 0.80], fill="black", width=stroke)
+        draw.polygon(
+            [(mid_x - head, top + size * 0.68), (mid_x + head, top + size * 0.68),
+             (mid_x, top + size * 0.94)],
+            fill="black",
+        )
+
+
+def _umbrella(draw: ImageDraw.ImageDraw, left: float, top: float, size: int, stroke: int) -> None:
+    """Ombrello: calotta a semicerchio, asta centrale e manico corto."""
+    canopy_top = top + size * 0.12
+    canopy_height = size * 0.42
+    draw.pieslice(
+        [
+            left + size * 0.06,
+            canopy_top,
+            left + size * 0.94,
+            canopy_top + canopy_height * 2,
+        ],
+        180,
+        360,
+        fill="black",
+    )
+    shaft_x = left + size * 0.5
+    shaft_bottom = top + size * 0.86
+    draw.line(
+        [shaft_x, canopy_top + canopy_height, shaft_x, shaft_bottom], fill="black", width=stroke
+    )
+    draw.arc(
+        [
+            shaft_x - size * 0.16,
+            shaft_bottom - size * 0.14,
+            shaft_x,
+            shaft_bottom + size * 0.14,
+        ],
+        0,
+        180,
+        fill="black",
+        width=stroke,
     )
 
 

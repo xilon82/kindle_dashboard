@@ -12,12 +12,20 @@ from datetime import date, datetime
 
 from PIL import Image, ImageDraw
 
-from ..model import CalEvent, Departure, PanelData, Sea, SeaDay, Sync, Weather
+from ..model import CalEvent, DayForecast, Departure, PanelData, Sea, SeaDay, Sync, Weather
 from ..sources import marine as marine_source
 from ..sources import weather as weather_source
 from . import fonts, icons
 from .fonts import Font
-from .layout import compass, date_label, divider, fit_text, relative_day, waste_day_label
+from .layout import (
+    compass,
+    date_label,
+    divider,
+    fit_text,
+    relative_day,
+    waste_day_label,
+    wind_name,
+)
 
 DEFAULT_SIZE = (600, 800)
 _BASE_HEIGHT = 800
@@ -32,6 +40,14 @@ _HEADER_GAP_PX = 10
 # icone la identificano) e parte subito, guadagnando una riga intera.
 _RULE_TOP_PX = 14
 _RULE_GAP_PX = 22
+# Intestazione: la fascia dell'orologio copre le righe 2-4 della griglia; percepita e probabilità
+# di pioggia stanno nello slack sotto la temperatura grande, quindi non costano una riga in più.
+_CLOCK_BAND_PX = 94
+_NOW_DETAILS_TOP_PX = 60
+# Righe 5 e 6: alba/tramonto e vento a sinistra, descrizione e mare a destra. Il mare non divide
+# più la riga con il vento, così ognuno ha la sua colonna e nessuno dei due deve cedere all'altro.
+_STATUS_ROW_PX = 26
+_STATUS_BOTTOM_PX = 30
 # Seconda riga della striscia previsioni: sta nello slack della prima (icona 32 px in una riga
 # da 54), quindi il costo verticale è di pochi pixel.
 _SEA_ROW_TOP_PX = 34
@@ -237,63 +253,171 @@ def _draw_header(draw: ImageDraw.ImageDraw, style: _Style, data: PanelData) -> i
         )
 
     clock_top = top + style.px(28)
-    draw.text(
-        (style.margin, clock_top),
-        _clock_label(data),
-        font=style.clock_font,
-        fill="black",
-    )
+    clock = _clock_label(data)
+    draw.text((style.margin, clock_top), clock, font=style.clock_font, fill="black")
+    clock_right = style.margin + round(style.clock_font.getlength(clock))
     if data.weather is not None:
         _draw_weather_now(draw, style, data.weather, clock_top)
-
-    status_top = clock_top + style.px(94)
-    _draw_status_line(draw, style, data, status_top)
-    return status_top + style.px(30)
-
-
-def _draw_status_line(draw: ImageDraw.ImageDraw, style: _Style, data: PanelData, top: int) -> None:
-    """Riga condizioni: testo a sinistra, mare attuale allineato a destra.
-
-    Prima si misura il meteo — che non deve perdere pezzi, la direzione del vento è
-    obbligatoria — poi il mare riceve lo spazio che resta: è il mare a cedere, non il vento.
-    """
-    icon_size = style.px(20)
-    gap = style.px(_INLINE_GAP_PX)
-    if data.weather is not None:
-        segments = _condition_segments(data.weather)
-    else:
-        segments = (_text(_section_text(data.weather_sync, "meteo non disponibile")),)
-
-    needed = _inline_width(segments, style.text_font, icon_size, gap)
-    sea_segments = _status_sea_segments(data)
-    sea_width = 0
-    if sea_segments:
-        sea_budget = style.content_width - needed - style.px(_HEADER_GAP_PX)
-        fitted_sea = _fit_inline(sea_segments, style.text_font, icon_size, gap, sea_budget)
-        sea_width = _inline_width(fitted_sea, style.text_font, icon_size, gap)
-        _draw_inline(
-            draw,
-            style,
-            fitted_sea,
-            style.right - sea_width,
-            top,
-            font=style.text_font,
-            icon_size=icon_size,
+        _draw_now_details(
+            draw, style, data.weather, clock_top + style.px(_NOW_DETAILS_TOP_PX), clock_right
         )
 
-    budget = style.content_width - sea_width - (style.px(_HEADER_GAP_PX) if sea_width else 0)
-    fitted = _fit_inline(segments, style.text_font, icon_size, gap, budget)
-    _draw_inline(draw, style, fitted, style.margin, top, font=style.text_font, icon_size=icon_size)
+    return _draw_status_rows(draw, style, data, clock_top + style.px(_CLOCK_BAND_PX))
+
+
+def _draw_status_rows(draw: ImageDraw.ImageDraw, style: _Style, data: PanelData, top: int) -> int:
+    """Righe 5 e 6: alba/tramonto e vento a sinistra, descrizione e mare a destra.
+
+    Ogni blocco ha la sua colonna, quindi vento e mare non si contendono più la stessa riga:
+    l'ordine verticale dei bollettini (vento prima del mare) si legge in orizzontale.
+    """
+    row = style.px(_STATUS_ROW_PX)
+    weather = data.weather
+    if weather is None:
+        _message(draw, style, top, _section_text(data.weather_sync, "meteo non disponibile"))
+        _draw_balanced_row(draw, style, (), _status_sea_segments(data), top + row)
+        return top + style.px(_STATUS_ROW_PX + _STATUS_BOTTOM_PX)
+
+    today = _today_forecast(weather, _moment(data))
+    sun = _sun_segments(today)
+    label = _text(weather_source.label(weather.now.code))
+    # La descrizione va nella colonna destra quando gli orari del sole occupano la sinistra; se
+    # mancano (cache scritta prima dei campi nuovi) resta a sinistra, come prima del restyling.
+    description: tuple[_Segment, ...] = (label,) if sun else ()
+    _draw_balanced_row(draw, style, sun or (label,), description, top)
+    _draw_balanced_row(draw, style, _wind_segments(weather), _status_sea_segments(data), top + row)
+    return top + style.px(_STATUS_ROW_PX + _STATUS_BOTTOM_PX)
 
 
 def _status_sea_segments(data: PanelData) -> tuple[_Segment, ...]:
-    """Blocco mare della riga condizioni; vuoto quando la sezione è spenta."""
+    """Blocco mare della riga di stato; vuoto quando la sezione è spenta."""
     if data.sea is not None:
         return _sea_segments(data.sea)
     if data.sea_sync.error:
         # Sezione configurata ma senza dati: si dichiara in tre parole, senza rubare una riga.
         return (_text("mare n.d."),)
     return ()
+
+
+def _draw_balanced_row(
+    draw: ImageDraw.ImageDraw,
+    style: _Style,
+    left: Sequence[_Segment],
+    right: Sequence[_Segment],
+    top: int,
+) -> None:
+    """Riga a due colonne: il blocco sinistro ha la precedenza, il destro riceve il resto.
+
+    Serve al vento: ``Maestrale-Tramontana`` è lungo e con una quota fissa a metà riga verrebbe
+    scartato. Il destro scende sotto metà larghezza solo quando il sinistro la occupa davvero, e
+    a cedere è la temperatura dell'acqua, non il nome del vento.
+    """
+    icon_size = style.px(20)
+    gap = style.px(_INLINE_GAP_PX)
+    gutter = style.px(_HEADER_GAP_PX)
+    share = style.content_width / 2
+    wanted_left = _inline_width(left, style.text_font, icon_size, gap)
+    right_budget = min(share, max(0.0, style.content_width - wanted_left - gutter))
+    fitted_right = _fit_inline(right, style.text_font, icon_size, gap, right_budget)
+    right_width = _inline_width(fitted_right, style.text_font, icon_size, gap)
+    left_budget = style.content_width - right_width - gutter
+    fitted_left = _fit_inline(left, style.text_font, icon_size, gap, left_budget)
+    _draw_inline(draw, style, fitted_left, style.margin, top, font=style.text_font, icon_size=icon_size)
+    _draw_inline(
+        draw,
+        style,
+        fitted_right,
+        style.right - right_width,
+        top,
+        font=style.text_font,
+        icon_size=icon_size,
+    )
+
+
+def _today_forecast(weather: Weather, moment: datetime) -> DayForecast | None:
+    """Previsione di oggi: alba e tramonto stanno lì, accoppiati per data e non per indice."""
+    return next((day for day in weather.days if day.day == moment.date()), None)
+
+
+def _sun_segments(day: DayForecast | None) -> tuple[_Segment, ...]:
+    """Alba e tramonto su una riga: sole sul filo dell'orizzonte e freccia su/giù.
+
+    Le frecce sono l'unico pezzo che può cedere: senza di loro glifo e orario restano leggibili,
+    mentre troncare un orario non lo è.
+    """
+    if day is None:
+        return ()
+    segments: list[_Segment] = []
+    if day.sunrise is not None:
+        segments += [
+            _icon("sunrise"),
+            _text(day.sunrise.strftime("%H:%M")),
+            _icon("arrow_up", required=False),
+        ]
+    if day.sunset is not None:
+        segments += [
+            _icon("sunset"),
+            _text(day.sunset.strftime("%H:%M")),
+            _icon("arrow_down", required=False),
+        ]
+    return tuple(segments)
+
+
+def _wind_segments(weather: Weather) -> tuple[_Segment, ...]:
+    """Vento attuale: nodi, direzione obbligatoria e nome tradizionale che può cedere.
+
+    La sigla resta obbligatoria (il vento non perde la direzione); il nome è un di più che si
+    toglie quando la colonna si stringe.
+    """
+    if weather.now.wind_kn is None:
+        return ()
+    segments: list[_Segment] = [_icon("wind"), _text(f"{weather.now.wind_kn:.0f} kn")]
+    cardinal = compass(weather.now.wind_direction)
+    if cardinal:
+        segments.append(_text(cardinal))
+        name = wind_name(weather.now.wind_direction)
+        if name:
+            segments.append(_text(f"· {name}", required=False))
+    return tuple(segments)
+
+
+def _now_detail_segments(weather: Weather, *, with_rain: bool = True) -> tuple[_Segment, ...]:
+    """Percepita e probabilità di pioggia: riga piccola sotto la temperatura grande."""
+    segments: list[_Segment] = []
+    if weather.now.apparent is not None:
+        segments += [_icon("person"), _text(f"{weather.now.apparent:.0f}°")]
+    if with_rain and weather.now.rain_probability is not None:
+        # Icona e percentuale sono due pezzi: la pioggia si toglie intera in ``_draw_now_details``,
+        # altrimenti il fit lascerebbe un ombrello senza numero.
+        segments += [_icon("umbrella"), _text(f"{weather.now.rain_probability}%")]
+    return tuple(segments)
+
+
+def _draw_now_details(
+    draw: ImageDraw.ImageDraw,
+    style: _Style,
+    weather: Weather,
+    top: int,
+    clock_right: int,
+) -> None:
+    """Percepita e pioggia allineate a destra, nello spazio fra orologio e bordo."""
+    icon_size = style.px(16)
+    gap = style.px(_INLINE_GAP_PX)
+    available = style.right - clock_right - style.px(_HEADER_GAP_PX)
+    segments = _now_detail_segments(weather)
+    if _inline_width(segments, style.small_font, icon_size, gap) > available:
+        segments = _now_detail_segments(weather, with_rain=False)
+    fitted = _fit_inline(segments, style.small_font, icon_size, gap, available)
+    width = _inline_width(fitted, style.small_font, icon_size, gap)
+    _draw_inline(
+        draw,
+        style,
+        fitted,
+        style.right - width,
+        top,
+        font=style.small_font,
+        icon_size=icon_size,
+    )
 
 
 def _draw_weather_now(draw: ImageDraw.ImageDraw, style: _Style, weather: Weather, top: int) -> None:
@@ -308,21 +432,6 @@ def _draw_weather_now(draw: ImageDraw.ImageDraw, style: _Style, weather: Weather
         weather_source.icon_kind(weather.now.code),
         (round(icon_left), icon_top, round(icon_left + icon_size), icon_top + icon_size),
     )
-
-
-def _condition_segments(weather: Weather) -> tuple[_Segment, ...]:
-    """Condizioni attuali: le icone sostituiscono le parole "percepiti" e "vento"."""
-    segments = [_text(weather_source.label(weather.now.code))]
-    if weather.now.apparent is not None:
-        segments += [_icon("person"), _text(f"{weather.now.apparent:.0f}°")]
-    if weather.now.wind_kn is not None:
-        segments += [_icon("wind"), _text(f"{weather.now.wind_kn:.0f} kn")]
-        cardinal = compass(weather.now.wind_direction)
-        if cardinal:
-            # "15 kn NNE": la convenzione dei bollettini, senza il "da". Obbligatorio, perché
-            # è il mare a dover cedere spazio quando la riga si stringe.
-            segments.append(_text(cardinal))
-    return tuple(segments)
 
 
 def _sea_segments(sea: Sea) -> tuple[_Segment, ...]:

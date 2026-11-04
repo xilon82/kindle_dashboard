@@ -19,12 +19,46 @@ COMPASS_POINTS = (
 )
 
 
+# Nomi tradizionali del Mediterraneo, uno per settore. Gli intermedi sono composti dai due venti
+# principali in senso orario (ESE = Levante-Scirocco): "Levante" da solo racconterebbe una
+# direzione che non è quella indicata dalla sigla.
+WIND_NAMES = (
+    "Tramontana",            # N
+    "Tramontana-Grecale",    # NNE
+    "Grecale",               # NE
+    "Grecale-Levante",       # ENE
+    "Levante",               # E
+    "Levante-Scirocco",      # ESE
+    "Scirocco",              # SE
+    "Scirocco-Ostro",        # SSE
+    "Ostro",                 # S
+    "Ostro-Libeccio",        # SSO
+    "Libeccio",              # SO
+    "Libeccio-Ponente",      # OSO
+    "Ponente",               # O
+    "Ponente-Maestrale",     # ONO
+    "Maestrale",             # NO
+    "Maestrale-Tramontana",  # NNO
+)
+
+
+def _sector(degrees: float) -> int:
+    """Indice 0-15 del settore di provenienza: unica conversione usata da sigla e nome."""
+    return round((float(degrees) % 360) / 22.5) % len(COMPASS_POINTS)
+
+
 def compass(degrees: float | None) -> str:
     """Direzione di provenienza a 16 settori (``NNE``); vuota se il dato manca."""
     if degrees is None:
         return ""
-    index = round((float(degrees) % 360) / 22.5) % len(COMPASS_POINTS)
-    return COMPASS_POINTS[index]
+    return COMPASS_POINTS[_sector(degrees)]
+
+
+def wind_name(degrees: float | None) -> str:
+    """Nome tradizionale del vento (``Levante-Scirocco``) per la direzione; vuoto se manca."""
+    if degrees is None:
+        return ""
+    return WIND_NAMES[_sector(degrees)]
 
 
 def fit_text(text: str, font: Font, max_width: float) -> str:

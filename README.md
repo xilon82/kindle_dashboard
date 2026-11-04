@@ -8,21 +8,27 @@ FBInk. Un pannello non deve mai bloccarsi, quindi ogni sezione ha un fallback.
 
 ## Requisiti
 
-- PC acceso con Python 3.11+ (verificato su Windows 11, Python 3.13).
+- PC acceso con **Python 3.11+** (verificato su Windows 11, Python 3.13) — *oppure* **Docker + Compose** (vedi [Avvio con Docker](#avvio-con-docker-alternativa-al-venv)).
 - Kindle jailbroken con **KUAL** installato e **KOReader** (fornisce il binario `fbink`), collegato
   alla stessa rete del PC. Verificato su un Kindle 4 (`reader.lua` riporta `device Kindle4`,
   600x800 @ 167 dpi). Attenzione: il Kindle 4 ha solo Wi-Fi **2.4 GHz**, quindi il PC deve essere
   raggiungibile da quell'SSID (stessa subnet).
 - Nessuna API key: meteo e mare da Open-Meteo, treni da Transitous.
 
-## Installazione
+## Installazione (venv nativo)
+
+Da un venv dedicato, così le dipendenze non finiscono nell'ambiente globale:
 
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install -e .
 ```
 
 Su Windows il pacchetto `tzdata` è obbligatorio: il sistema non fornisce il database dei fusi
 orari usato da `zoneinfo`. È dichiarato in `pyproject.toml`, non serve installarlo a mano.
+
+Perché il venv, come ricrearlo, vantaggi e limiti rispetto a Docker: [docs/venv.md](docs/venv.md).
 
 ## Configurazione
 
@@ -75,12 +81,26 @@ L'URL è pubblico e non è una credenziale, quindi niente variabile d'ambiente. 
 all'intervallo coperto dal calendario: quello di Santa Marinella arriva dal 01/06/2026 al 31/12/2026,
 quindi fuori da quelle date la colonna mostra solo `niente` finché il comune non lo aggiorna.
 
+### Intestazione
+
+La parte alta del pannello è a due colonne:
+
+- a sinistra data e orologio; sotto, **alba e tramonto** con il sole sul filo dell'orizzonte e la
+  freccia su/giù, poi il **vento** in nodi con direzione e nome tradizionale (`6 kn ESE · Levante`);
+- a destra il luogo, l'icona del meteo con la temperatura, la **percepita** e la **probabilità di
+  pioggia** nelle prossime sei ore (ombrello), la descrizione e il mare.
+
+Il nome del vento segue la rosa a 16 settori: ogni direzione ha il suo nome e gli intermedi sono
+composti dai due venti principali in senso orario (`ESE` = Levante-Scirocco, `NNO` =
+Maestrale-Tramontana). Se la fonte non fornisce alba/tramonto (cache scritta prima di questi campi)
+la descrizione torna al posto degli orari, così la riga non resta vuota.
+
 ### Mare
 
 Con `sea.enabled = true` il pannello aggiunge le condizioni del mare dalle **stesse coordinate di
 `[location]`** (Open-Meteo Marine API, nessuna chiave):
 
-- sulla riga delle condizioni, allineato a destra: stato in parole, altezza d'onda e temperatura
+- nella riga del vento, nella colonna di destra: stato in parole, altezza d'onda e temperatura
   dell'acqua (`poco mosso 0.6m 21°`);
 - sotto ciascuna delle tre giornate: **forza Douglas** (`F3`), altezza d'onda, vento massimo in nodi
   e direzione (`F3 1.3m 21 kn NNE`). La forza costa 15 px contro i 75 di `poco mosso`: è ciò che fa
@@ -149,7 +169,72 @@ alla cadenza diurna. Per vedere l'anteprima notturna senza aspettare le 23: `ren
 Per tenerlo visibile: alimentazione da caricatore (non dalla porta USB del PC) e timeout schermo al
 massimo nelle impostazioni. Se compare il salvascherino, un tocco riporta la pagina.
 
-### Avvio automatico del server
+### Avvio con Docker (alternativa al venv)
+
+Se preferisci non installare Python e dipendenze sull'host, puoi usare Docker.  
+Requisiti: **Docker Engine + plugin Compose v2** (`docker compose`; su Ubuntu recente il pacchetto
+è `docker-compose-v2`, oppure si installa il plugin dal repository Docker). Su Windows/macOS basta
+Docker Desktop avviato.
+
+Guida didattica completa (scelte, volumi, trappole, rollback): [docs/docker.md](docs/docker.md).
+
+```bash
+# 1. Build immagine (prima volta o dopo modifiche a Dockerfile/pyproject.toml)
+docker compose build
+
+# 2. Avvia server in background (porta 8787)
+docker compose up -d
+
+# 3. Verifica
+curl http://localhost:8787/health      # → ok
+curl http://localhost:8787/panel.png -o /tmp/test.png && file /tmp/test.png
+```
+
+**Comandi utili**
+
+| Operazione | Comando |
+|------------|---------|
+| Log live | `docker compose logs -f` |
+| Ferma (mantieni container) | `docker compose stop` |
+| Riavvia | `docker compose start` |
+| Ricarica config cambiata | `docker compose restart` |
+| Rimuovi tutto (container + network) | `docker compose down` |
+| Render one-shot (senza server) | `docker compose run --rm -v "${PWD}:/out" dashboard render -o /out/preview.png` |
+
+**Volumi montati** (stessi file del venv):
+- `./config.toml` → `/home/appuser/config.toml` (read-only)
+- `./cache/` → `/home/appuser/cache/` (read-write)
+- `./kindle_dashboard/` → `/home/appuser/kindle_dashboard/` (read-only, solo sviluppo: dopo una
+  modifica ai sorgenti serve `docker compose restart`, il processo tiene il codice in memoria)
+
+> **Nota**: il file `config.toml` deve esistere prima del primo `up`. Copialo da `config.example.toml` e modificalo.
+
+> **Non avviare l'immagine da sola.** L'immagine non contiene `config.toml` (è un segreto, escluso da
+> `.dockerignore`): il file arriva **solo** dal volume montato da Compose. Con `docker run
+> kindle-dashboard:local` o col pulsante **Run** di Docker Desktop il processo esce subito con
+> `errore di configurazione: configurazione non trovata: config.toml` (exit code 2) e il container
+> resta lì come `Exited`. Il comando giusto è `docker compose up -d`. Per un comando one-shot
+> esplicito: `docker run --rm -v "$PWD/config.toml:/home/appuser/config.toml:ro"
+> kindle-dashboard:local render`.
+
+---
+
+### Deploy su target remoto (Raspberry Pi, thin client, VPS)
+
+```bash
+# Sul target
+git clone <repo-url> kindle_dashboard
+cd kindle_dashboard
+git checkout docker-support        # o tag di release
+cp config.example.toml config.toml
+vim config.toml                    # lat/lon, calendari, treni, ecc.
+docker compose up -d
+```
+Il Kindle punterà a `http://<ip-target>:8787/panel.html`.
+
+---
+
+### Avvio automatico del server (senza Docker)
 
 Il pannello si aggiorna solo se il server sul PC è acceso. Per non lanciarlo a mano:
 
@@ -257,6 +342,9 @@ Get-NetFirewallApplicationFilter | Where-Object { $_.Program -like '*python*' } 
 python -m ruff check .
 python -m pytest -q
 ```
+
+I due comandi girano nel venv ([docs/venv.md](docs/venv.md)); Docker serve al deploy, non al gate
+([docs/docker.md](docs/docker.md)).
 
 Architettura, invarianti e come estendere il progetto: [AGENTS.md](AGENTS.md).
 Percorso tecnico narrato (come funziona e perché, con i bug realmente incontrati):
