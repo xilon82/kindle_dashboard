@@ -44,9 +44,37 @@ registry: un solo servizio, una sola porta.
 | `.dockerignore` | 21 | esclude dal build context `.venv/`, `cache/`, `tests/`, `docs/`, `kindle/`, `.git/`, i PNG e i `config*.toml` locali (contengono l'URL iCal segreto) |
 
 Il *build context* è ciò che Docker invia al daemon per costruire l'immagine: tenerlo piccolo rende
-la build più veloce ed evita di spedire cache e segreti. `config.toml` non è nell'elenco di
-`.dockerignore`, ma non viene copiato dal `Dockerfile`: entra a runtime come volume (sezione 5).
-`docker-compose.override.yml` è escluso: puoi usarlo per modifiche locali senza toccare l'immagine.
+la build più veloce ed evita di spedire cache e segreti. `config.toml` è **escluso** dal contesto
+(contiene l'URL iCal segreto) e non viene copiato dal `Dockerfile`: entra a runtime come volume
+(sezione 5). `docker-compose.override.yml` è escluso: puoi usarlo per modifiche locali senza toccare
+l'immagine.
+
+### Chi è chi: project, service, container, image
+
+Compose è un modo **dichiarativo** di avviare container: il `docker-compose.yml` descrive *cosa*
+deve esistere. Quattro nomi da non confondere:
+
+| Nome | Nel progetto | Cosa è |
+|---|---|---|
+| **image** | `kindle-dashboard:local` | la ricetta costruita dal `Dockerfile` (`docker compose build`) |
+| **project** | `kindleretractor` | il prefisso che Compose ricava dalla cartella del compose: raggruppa container, rete e volumi |
+| **service** | `dashboard` | la voce sotto `services:`: immagine, volumi, porte, ambiente, healthcheck |
+| **container** | `kindleretractor-dashboard-1` | l'istanza creata da `docker compose up` |
+
+Compose crea anche la rete `kindleretractor_default` (i container del progetto si parlano per nome).
+Le opzioni di `docker run` — `-p`, `-v`, `-e`, `--restart`, l'healthcheck — non si digitano più: sono
+nel file e vengono applicate **a ogni** container del servizio, quindi non puoi dimenticarti il
+volume di `config.toml`.
+
+Per questo `docker run kindle-dashboard:local` (o il pulsante **Run** di Docker Desktop) non è
+equivalente: crea un container "nudo", senza volume né porta né variabili, che esce subito con
+`configurazione non trovata: config.toml`. `docker compose run --rm dashboard <comando>` invece usa
+la **stessa** definizione del servizio (volumi compresi), crea un container usa-e-getta
+`kindleretractor-dashboard-run-<hash>` e lo elimina all'uscita: è la via per i comandi one-shot.
+
+Ciclo di vita: `up -d` crea o **ricrea** solo ciò che è cambiato ed è idempotente; `restart` riavvia
+il processo senza ricreare il container (il codice Python in memoria cambia solo così); `down`
+rimuove container e rete ma **non** l'immagine né `config.toml`/`cache/`, che stanno sull'host.
 
 ### Dockerfile: due stage
 
@@ -274,6 +302,7 @@ fila, il backup va rifatto ogni volta.
 | `Cannot connect to the Docker daemon` | Docker Desktop spento o servizio non avviato | avvia Docker Desktop, oppure `sudo systemctl start docker` su Linux |
 | `port is already allocated` | un'altra istanza (o un altro programma) occupa la 8787 | `docker compose down`; su Windows `Get-NetTCPConnection -LocalPort 8787 -State Listen`, su Linux `ss -ltnp \| grep 8787` |
 | `configurazione non trovata: config.toml` | il bind mount ha creato una directory al posto del file | crea `config.toml` da `config.example.toml` e riavvia |
+| Container `Exited (2)` con `configurazione non trovata` | immagine avviata **fuori da Compose** (`docker run` o pulsante Run): manca il volume di `config.toml` | `docker compose up -d`; per un one-shot `docker run --rm -v "$PWD/config.toml:/home/appuser/config.toml:ro" kindle-dashboard:local render` |
 | container `unhealthy` | healthcheck fallito: il servizio non risponde (o risponde male) entro i tentativi | `docker compose logs`, poi `docker compose exec dashboard python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8787/health').status)"`; se serve alza `start_period` |
 | `permission denied` su `cache/` | UID del container diverso dal proprietario della cartella (host non-UID 1000) | `chown` della cartella o `user:` in un override |
 | Il pannello mostra la versione vecchia | il processo ha il codice vecchio in memoria | `docker compose restart` (o togli il volume di sviluppo e ricostruisci) |

@@ -209,6 +209,14 @@ curl http://localhost:8787/panel.png -o /tmp/test.png && file /tmp/test.png
 
 > **Nota**: il file `config.toml` deve esistere prima del primo `up`. Copialo da `config.example.toml` e modificalo.
 
+> **Non avviare l'immagine da sola.** L'immagine non contiene `config.toml` (è un segreto, escluso da
+> `.dockerignore`): il file arriva **solo** dal volume montato da Compose. Con `docker run
+> kindle-dashboard:local` o col pulsante **Run** di Docker Desktop il processo esce subito con
+> `errore di configurazione: configurazione non trovata: config.toml` (exit code 2) e il container
+> resta lì come `Exited`. Il comando giusto è `docker compose up -d`. Per un comando one-shot
+> esplicito: `docker run --rm -v "$PWD/config.toml:/home/appuser/config.toml:ro"
+> kindle-dashboard:local render`.
+
 ---
 
 ### Deploy su target remoto (Raspberry Pi, thin client, VPS)

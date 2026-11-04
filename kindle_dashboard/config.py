@@ -126,7 +126,8 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
     if not config_path.is_file():
         raise ConfigError(
             f"configurazione non trovata: {config_path} — copia {EXAMPLE_CONFIG_FILENAME} "
-            f"in {LOCAL_CONFIG_FILENAME}"
+            f"in {LOCAL_CONFIG_FILENAME} (in Docker il file arriva da un volume: usa "
+            f"'docker compose up', non l'immagine da sola)"
         )
     try:
         data = tomllib.loads(config_path.read_text(encoding="utf-8-sig"))
