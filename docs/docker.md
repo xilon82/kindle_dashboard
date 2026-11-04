@@ -35,6 +35,30 @@ docker info                # se fallisce, il daemon non è in esecuzione
 (v2), l'unico comando che conviene imparare. Il progetto non ha bisogno di Kubernetes né di un
 registry: un solo servizio, una sola porta.
 
+Se `docker compose version` risponde `docker: unknown command: docker compose`, il client Docker
+c'è ma il **plugin** no. Installalo a livello utente, senza sudo:
+
+```bash
+arch=$(uname -m)
+case "$arch" in
+  x86_64) asset=x86_64 ;;
+  aarch64|arm64) asset=aarch64 ;;
+  armv7l) asset=armv7 ;;
+  armv6l) asset=armv6 ;;
+  *) echo "architettura non gestita: $arch"; exit 1 ;;
+esac
+mkdir -p ~/.docker/cli-plugins
+curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$asset" \
+  -o ~/.docker/cli-plugins/docker-compose
+chmod +x ~/.docker/cli-plugins/docker-compose
+docker compose version
+```
+
+In alternativa, dal repository Docker: `sudo apt-get install docker-compose-plugin` (o
+`docker-compose-v2`). Nel frattempo un riavvio si fa lo stesso con `docker restart
+kindle-dashboard`: il nome del container è fissato da `container_name`, quindi equivale a
+`docker compose restart`.
+
 ## 3. I tre file del progetto
 
 | File | Righe | Cosa fa |
@@ -284,6 +308,56 @@ L'ordine conta: il tag di backup va preso **prima** della build. Se lo prendi do
 l'immagine nuova (quella che vuoi scartare) e il rollback non torna indietro. Senza un registry il
 rollback è possibile solo se l'immagine precedente è ancora in locale: se ricostruisci due volte di
 fila, il backup va rifatto ogni volta.
+
+### Aggiornare un server di casa via SSH
+
+Su un host remoto (Raspberry, mini PC, VPS) si aggiorna dalla shell, con in più il fetch dei tag, la
+verifica di cosa sta girando e la cache da svuotare quando cambiano i campi delle fonti:
+
+```bash
+ssh <utente>@<ip-server>
+cd <cartella-del-clone>                  # es. ~/kindle_dashboard
+
+# 1. Raggiungi il rilascio: main segue l'ultimo merge, il tag dice cosa gira
+git fetch --all --prune --tags
+git checkout main
+git pull --ff-only
+git describe --tags --always             # es. v0.2.0
+
+# 2. Backup dell'immagine PRIMA della build, poi ricostruisci
+docker tag kindle-dashboard:local kindle-dashboard:backup 2>/dev/null || true
+docker compose build --pull
+docker compose up -d
+
+# 3. Verifica
+docker compose ps                                            # running → healthy
+curl -fsS http://127.0.0.1:8787/health && echo               # ok
+curl -fsS http://127.0.0.1:8787/panel.png -o /tmp/panel.png
+file /tmp/panel.png                                          # PNG ... 600 x 720
+rm -f cache/weather.json                                     # solo se sono cambiati i campi
+
+# 4. Se qualcosa non torna
+docker compose logs --tail=80 -f
+```
+
+`git pull --ff-only` si ferma invece di creare un merge se l'host ha modifiche locali: è il
+comportamento che vuoi su un host di deploy.
+
+**Cache e campi nuovi.** Una cache scritta dalla versione precedente non ha i campi aggiunti dopo
+(per esempio `sunrise`, `sunset`, `precipitation_probability`): il parsing è tollerante, ma finché
+non c'è un fetch riuscito il pannello mostra il fallback. `rm -f cache/weather.json` forza la
+riscrittura alla richiesta successiva; non serve riavviare.
+
+**Rilascio pinnato (opzionale).** Per non seguire `main`: `git checkout v0.2.0` (HEAD staccato) e,
+per aggiornare, `git fetch --tags` + `git checkout <nuovo-tag>`. Per un server di casa `main` è più
+comodo; il tag serve a sapere cosa sta girando.
+
+**Dopo il reboot.** `restart: unless-stopped` riavvia il container, ma solo se il daemon parte:
+`systemctl enable docker` una volta sola. Se il servizio non risponde dall'esterno, controlla il
+firewall dell'host (`ufw allow 8787/tcp`) e la rete (il Kindle 4 non ha radio a 5 GHz).
+
+**Architettura.** La build è locale: su ARM (Raspberry) funziona, ma non trasferire l'immagine
+costruita su un PC x86, non girerebbe.
 
 ## 8. Cosa Docker non fa
 

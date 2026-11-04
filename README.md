@@ -232,6 +232,9 @@ docker compose up -d
 ```
 Il Kindle punterà a `http://<ip-target>:8787/panel.html`.
 
+Gli aggiornamenti successivi (fetch dei tag, backup dell'immagine, build, verifica, rollback) sono in
+[docs/docker.md §7](docs/docker.md#aggiornare-un-server-di-casa-via-ssh).
+
 ---
 
 ### Avvio automatico del server (senza Docker)
