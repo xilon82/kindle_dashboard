@@ -59,7 +59,7 @@ deve esistere. Quattro nomi da non confondere:
 | **image** | `kindle-dashboard:local` | la ricetta costruita dal `Dockerfile` (`docker compose build`) |
 | **project** | `kindleretractor` | il prefisso che Compose ricava dalla cartella del compose: raggruppa container, rete e volumi |
 | **service** | `dashboard` | la voce sotto `services:`: immagine, volumi, porte, ambiente, healthcheck |
-| **container** | `kindleretractor-dashboard-1` | l'istanza creata da `docker compose up` |
+| **container** | `kindle-dashboard` | l'istanza creata da `docker compose up`: il nome è fissato da `container_name` (senza, sarebbe `kindleretractor-dashboard-1`) |
 
 Compose crea anche la rete `kindleretractor_default` (i container del progetto si parlano per nome).
 Le opzioni di `docker run` — `-p`, `-v`, `-e`, `--restart`, l'healthcheck — non si digitano più: sono
