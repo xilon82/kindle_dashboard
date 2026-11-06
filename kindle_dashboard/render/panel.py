@@ -29,10 +29,16 @@ from .layout import (
 
 DEFAULT_SIZE = (600, 800)
 _BASE_HEIGHT = 800
-_TITLE_ROW_PX = 50
+_TITLE_ROW_PX = 56
 _CALENDAR_ROW_PX = 44
 _TRAIN_ROW_PX = 44
 _STOPS_ROW_PX = 26
+# Riga del messaggio "nessuna partenza in vista": serve anche a `_trains_height`, perché il
+# blocco è ancorato al fondo e senza questa riga il messaggio finirebbe sotto la barra del footer.
+_MESSAGE_ROW_PX = 28
+# Icona accanto al titolo di sezione: sta dentro la riga del titolo, quindi non costa altezza;
+# cede però quando il titolo (con "· agg. HH:MM") non lascerebbe spazio sufficiente.
+_TITLE_ICON_PX = 22
 # Riga delle condizioni: l'icona sostituisce la parola ("percepiti", "vento") e libera spazio.
 _INLINE_GAP_PX = 6
 _HEADER_GAP_PX = 10
@@ -54,9 +60,9 @@ _SEA_ROW_TOP_PX = 34
 _FORECAST_ROW_PX = 54
 _FORECAST_ROW_SEA_PX = 58
 # Spazio fra le due colonne dell'agenda e quota lasciata al calendario eventi: la differenziata
-# sta in piedi con "DOMANI" + un materiale, gli eventi hanno bisogno di più caratteri.
+# deve contenere "DIFFERENZIATA · agg. HH:MM", gli eventi hanno bisogno di più caratteri.
 _COLUMN_GUTTER_PX = 16
-_EVENTS_SHARE = 0.6
+_EVENTS_SHARE = 0.60
 
 
 @dataclass(frozen=True)
@@ -191,18 +197,16 @@ def render_panel(
     image = Image.new("L", size, "white")
     draw = ImageDraw.Draw(image)
 
-    # Il treno è il dato con la scadenza più stretta: gli si riserva spazio in fondo e il
-    # calendario si tronca se non ci sta, invece di spingere i treni fuori dallo schermo.
+    # Il treno è il dato con la scadenza più stretta: il blocco sta **ancorato al fondo**, così
+    # l'agenda riceve lo spazio che resta e i treni non «galleggiano» a metà pagina quando gli
+    # eventi sono pochi. Se il calendario non ci sta si troncano le sue righe, non i treni.
     footer_top = style.height - style.margin - style.px(16)
-    trains_height = style.px(_TITLE_ROW_PX) + sum(
-        style.px(_TRAIN_ROW_PX) + (style.px(_STOPS_ROW_PX) if item.stops else 0)
-        for item in data.departures
-    )
+    trains_top = footer_top - _trains_height(style, data.departures)
 
     y = _draw_header(draw, style, data)
     y = _draw_forecast(draw, style, data, y)
-    y = _draw_agenda(draw, style, data, y, footer_top - trains_height)
-    _draw_trains(draw, style, data, y, stop_priority)
+    _draw_agenda(draw, style, data, y, trains_top)
+    _draw_trains(draw, style, data, trains_top, stop_priority)
     _draw_footer(draw, style, data)
     return image
 
@@ -228,7 +232,7 @@ def _build_style(size: tuple[int, int], font_override: str, bold_override: str) 
         body_font=bold(23),
         text_font=regular(22),
         small_font=regular(16),
-        title_font=bold(17),
+        title_font=bold(19),
         detail_font=bold(20),
     )
 
@@ -536,7 +540,7 @@ def _draw_forecast(draw: ImageDraw.ImageDraw, style: _Style, data: PanelData, y:
 
 def _draw_agenda(
     draw: ImageDraw.ImageDraw, style: _Style, data: PanelData, y: int, bottom: int
-) -> int:
+) -> None:
     """Calendario eventi e, se configurata, la raccolta differenziata in una colonna a destra.
 
     Senza ``[waste]`` la sezione resta a tutta larghezza come prima: la colonna in più è un dato
@@ -548,9 +552,17 @@ def _draw_agenda(
 
     if data.waste is None:
         _column_title(
-            draw, style, style.margin, title_top, "CALENDARIO", data.events_sync, style.content_width
+            draw,
+            style,
+            style.margin,
+            title_top,
+            "CALENDARIO",
+            data.events_sync,
+            style.content_width,
+            icon="calendar",
         )
-        return _draw_events(draw, style, data, rows_top, bottom, style.margin, style.right)
+        _draw_events(draw, style, data, rows_top, bottom, style.margin, style.right)
+        return
 
     gutter = style.px(_COLUMN_GUTTER_PX)
     events_right = style.margin + round((style.content_width - gutter) * _EVENTS_SHARE)
@@ -558,17 +570,36 @@ def _draw_agenda(
     events_width = events_right - style.margin
     waste_width = style.right - waste_left
 
-    _column_title(draw, style, style.margin, title_top, "CALENDARIO", data.events_sync, events_width)
-    _column_title(draw, style, waste_left, title_top, "DIFFERENZIATA", data.waste_sync, waste_width)
-    events_bottom = _draw_events(draw, style, data, rows_top, bottom, style.margin, events_right)
-    waste_bottom = _draw_waste(draw, style, data, rows_top, bottom, waste_left, style.right)
+    _column_title(
+        draw,
+        style,
+        style.margin,
+        title_top,
+        "CALENDARIO",
+        data.events_sync,
+        events_width,
+        icon="calendar",
+    )
+    _column_title(
+        draw,
+        style,
+        waste_left,
+        title_top,
+        "DIFFERENZIATA",
+        data.waste_sync,
+        waste_width,
+        icon="waste",
+    )
+    _draw_events(draw, style, data, rows_top, bottom, style.margin, events_right)
+    _draw_waste(draw, style, data, rows_top, bottom, waste_left, style.right)
 
+    # La linea chiude la colonna e tocca la regola orizzontale della sezione treni: così si vede
+    # dove finisce l'agenda anche quando le due colonne hanno un numero diverso di righe.
     separator = events_right + gutter // 2
-    line_bottom = max(events_bottom, waste_bottom) - style.px(8)
+    line_bottom = bottom + style.px(_RULE_TOP_PX)
     draw.rectangle(
         [separator, title_top, separator + max(1, style.px(1)), line_bottom], fill="black"
     )
-    return max(events_bottom, waste_bottom)
 
 
 def _draw_events(
@@ -579,9 +610,9 @@ def _draw_events(
     bottom: int,
     left: int,
     right: int,
-) -> int:
+) -> None:
     if not data.events:
-        return _message(
+        _message(
             draw,
             style,
             y,
@@ -589,6 +620,7 @@ def _draw_events(
             left=left,
             width=right - left,
         )
+        return
 
     today = _moment(data).date()
     row = style.px(_CALENDAR_ROW_PX)
@@ -605,7 +637,6 @@ def _draw_events(
             fill="black",
         )
         y += row
-    return y
 
 
 def _draw_waste(
@@ -616,11 +647,11 @@ def _draw_waste(
     bottom: int,
     left: int,
     right: int,
-) -> int:
+) -> None:
     """Un giorno per riga: ``niente`` dice che oggi non si porta fuori nulla."""
     days = data.waste or ()
     if not days:
-        return _message(
+        _message(
             draw,
             style,
             y,
@@ -628,6 +659,7 @@ def _draw_waste(
             left=left,
             width=right - left,
         )
+        return
 
     today = _moment(data).date()
     row = style.px(_CALENDAR_ROW_PX)
@@ -646,7 +678,6 @@ def _draw_waste(
             fill="black",
         )
         y += row
-    return y
 
 
 @dataclass(frozen=True)
@@ -657,6 +688,21 @@ class _Columns:
     line: int
 
 
+def _trains_height(style: _Style, departures: Sequence[Departure]) -> int:
+    """Altezza del blocco treni: titolo, una riga per partenza, una riga di fermate dove ci sono.
+
+    Con l'elenco vuoto si conta anche la riga del messaggio: il blocco è ancorato al fondo, e
+    senza quel conto "nessuna partenza in vista" finirebbe sotto il footer.
+    """
+    if not departures:
+        return style.px(_TITLE_ROW_PX) + style.px(_MESSAGE_ROW_PX)
+    rows = sum(
+        style.px(_TRAIN_ROW_PX) + (style.px(_STOPS_ROW_PX) if item.stops else 0)
+        for item in departures
+    )
+    return style.px(_TITLE_ROW_PX) + rows
+
+
 def _draw_trains(
     draw: ImageDraw.ImageDraw,
     style: _Style,
@@ -665,7 +711,7 @@ def _draw_trains(
     stop_priority: Sequence[str],
 ) -> None:
     title = "TRENI" if not data.board_name else f"TRENI · {data.board_name.upper()}"
-    y = _section_title(draw, style, top, title, data.departures_sync)
+    y = _section_title(draw, style, top, title, data.departures_sync, icon="train")
     if not data.departures:
         _message(draw, style, y, _section_text(data.departures_sync, "nessuna partenza in vista"))
         return
@@ -791,11 +837,34 @@ def _section_rule(draw: ImageDraw.ImageDraw, style: _Style, y: int) -> int:
 
 
 def _section_title(
-    draw: ImageDraw.ImageDraw, style: _Style, y: int, title: str, sync: Sync
+    draw: ImageDraw.ImageDraw,
+    style: _Style,
+    y: int,
+    title: str,
+    sync: Sync,
+    *,
+    icon: str = "",
 ) -> int:
     divider(draw, style.margin, style.right, y + style.px(_RULE_TOP_PX), thickness=style.px(2))
-    _column_title(draw, style, style.margin, y + style.px(28), title, sync, style.content_width)
+    _column_title(
+        draw, style, style.margin, y + style.px(28), title, sync, style.content_width, icon=icon
+    )
     return y + style.px(_TITLE_ROW_PX)
+
+
+def _title_icon(style: _Style, text: str, width: float, icon: str) -> tuple[int, int]:
+    """Lato dell'icona di titolo e spazio da lasciarle: ``(0, 0)`` quando il testo non ci sta.
+
+    L'icona è decorazione e cede per prima: il titolo porta l'informazione, compreso il
+    ``· agg. HH:MM`` che dice da quando i dati vengono dalla cache.
+    """
+    if not icon:
+        return 0, 0
+    size = style.px(_TITLE_ICON_PX)
+    offset = size + style.px(_INLINE_GAP_PX)
+    if style.title_font.getlength(text) + offset > width:
+        return 0, 0
+    return size, offset
 
 
 def _column_title(
@@ -806,13 +875,23 @@ def _column_title(
     title: str,
     sync: Sync,
     width: float,
+    *,
+    icon: str = "",
 ) -> None:
-    """Titolo di sezione o di colonna: il suffisso "agg." compare solo se ci sta nella larghezza."""
+    """Titolo di sezione o di colonna: icona se c'è spazio, "agg." se ci sta nella larghezza."""
     text = title
     if sync.stale and sync.updated_at is not None:
         text = f"{title} · agg. {sync.updated_at.strftime('%H:%M')}"
+    icon_size, offset = _title_icon(style, text, width, icon)
+    if icon_size:
+        icon_top = _icon_top(style.title_font, top, icon_size)
+        left = round(x)
+        icons.draw_icon(draw, icon, (left, icon_top, left + icon_size, icon_top + icon_size))
     draw.text(
-        (x, top), fit_text(text, style.title_font, width), font=style.title_font, fill="black"
+        (x + offset, top),
+        fit_text(text, style.title_font, width - offset),
+        font=style.title_font,
+        fill="black",
     )
 
 
@@ -831,7 +910,7 @@ def _message(
         font=style.text_font,
         fill="black",
     )
-    return y + style.px(28)
+    return y + style.px(_MESSAGE_ROW_PX)
 
 
 def _section_text(sync: Sync, fallback: str) -> str:

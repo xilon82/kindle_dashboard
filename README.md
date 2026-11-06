@@ -52,11 +52,11 @@ Copy-Item config.example.toml config.toml
 | `waste` | `ics_url` | vuoto | URL iCal **pubblico** del calendario della raccolta differenziata (vuoto = colonna destra assente) |
 | `waste` | `days` | 3 | giorni mostrati nella colonna: oggi, domani e il successivo |
 | `trains` | `station`, `stop_id` | — | stazione del tabellone (assente = niente treni) |
-| `trains` | `max_departures` | 4 | partenze mostrate |
+| `trains` | `max_departures` | 3 | partenze mostrate |
 | `trains` | `destinations` | `[]` | filtro per sottostringa (vuoto = tutte) |
 | `trains` | `stop_details` | `false` | seconda riga per treno con le fermate che corrispondono a `destinations` (una richiesta HTTP per treno) |
 | `trains` | `stop_priority` | `[]` | fermate da tenere sempre quando la riga non basta: le altre vengono ridotte |
-| `render` | `font`, `font_bold` | vuoto | percorsi TTF alternativi a quelli di sistema |
+| `render` | `font`, `font_bold` | vuoto | percorsi TTF alternativi a quelli cercati per piattaforma |
 | `server` | `host`, `port` | `0.0.0.0`, 8787 | dove ascolta il PC |
 | `schedule` | `night_start`, `night_end` | `23:00`, `06:30` | fascia notturna (finestra anche a cavallo di mezzanotte) |
 | `schedule` | `night_refresh_seconds` | `3600` | ricarica di notte; di notte l'ora è sostituita da `NOTTE` |
@@ -94,6 +94,12 @@ La parte alta del pannello è a due colonne:
 Se la riga dei dettagli si stringe cede prima la **percepita** — la temperatura reale è già scritta
 grande sopra — e poi la **pioggia**: l'umidità resta come ancora. I pezzi cadono sempre a coppie
 intere, icona e numero insieme, mai un'icona senza valore.
+
+Le icone del meteo usano **due toni**: nel *poco nuvoloso* il sole dietro la nuvola è grigio, così le
+due forme non si fondono in una macchia nera (lo stesso vale per il lampo del temporale).
+I titoli delle sezioni hanno la loro icona — calendario, bidone della differenziata, treno — ma è
+decorazione: se il titolo è lungo (con `· agg. HH:MM` perché quei dati vengono dalla cache) l'icona
+cede e resta il testo.
 
 Il nome del vento segue la rosa a 16 settori: ogni direzione ha il suo nome e gli intermedi prendono
 il nome dei due venti principali **nell'ordine delle lettere della sigla** (`OSO` = Ponente-Libeccio,
@@ -301,6 +307,7 @@ Tutti accettano `--config <file>` dopo il sottocomando.
 | Sintomo | Causa e rimedio |
 |---|---|
 | `fuso orario 'Europe/Rome' non disponibile` | manca `tzdata`: `python -m pip install tzdata` |
+| Nel pannello compaiono quadratini al posto delle accentate o del segno di moltiplicazione | il font scelto non ha quei caratteri: succede dove non è installato nessun TTF (container minimale), e Pillow usa un font incorporato incompleto | installa un font di sistema (su Debian/Ubuntu `fonts-dejavu-core`) oppure indica un `.ttf` in `[render] font` e `font_bold` |
 | Il Kindle non scarica nulla | verifica `http://<ip>:8787/panel.png` dal PC, poi dallo stesso URL nel browser del Kindle; controlla la regola firewall sulla rete privata |
 | Dal browser del Kindle "impossibile connettersi" | la rete è classificata **Public** da Windows e la regola `Private` non si applica: lancia `kindle\allow-lan.ps1` come amministratore (riclassifica la rete e apre la porta). Se alterni 2.4/5 GHz, usa `-AnyProfile`: il profilo firewall è per SSID, quindi cambiando banda la regola `Private` smetterebbe di valere |
 | Il Kindle non vede la rete Wi-Fi del PC | SSID a 5 GHz: il Kindle 4 ha solo radio 2.4 GHz, collegalo all'SSID 2.4 GHz dello stesso router (stessa subnet, senza "AP isolation") |

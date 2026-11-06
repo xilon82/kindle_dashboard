@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime
 
 import pytest
+from PIL import Image, ImageDraw
 
 from kindle_dashboard.model import (
     CalEvent,
@@ -20,9 +22,11 @@ from kindle_dashboard.model import (
     Weather,
     WeatherNow,
 )
-from kindle_dashboard.render import fonts
+from kindle_dashboard.render import fonts, icons
 from kindle_dashboard.render.layout import COMPASS_POINTS, WIND_NAMES, compass, waste_day_label, wind_name
 from kindle_dashboard.render.panel import (
+    _CALENDAR_ROW_PX,
+    _TITLE_ROW_PX,
     _build_style,
     _clock_label,
     _fit_inline,
@@ -35,6 +39,8 @@ from kindle_dashboard.render.panel import (
     _stop_line,
     _sun_segments,
     _text,
+    _title_icon,
+    _trains_height,
     _wind_segments,
     render_panel,
 )
@@ -574,3 +580,94 @@ def test_icon_is_centred_on_the_text_ink():
     top = _icon_top(font, 100, 18)
 
     assert top + 18 / 2 == pytest.approx(100 + (cap_top + cap_bottom) / 2, abs=0.5)
+
+
+def test_title_icon_yields_when_the_title_does_not_fit():
+    """L'icona di sezione è decorazione: cede prima del testo, che porta anche il "· agg."."""
+    style = _build_style((600, 800), "", "")
+    text = "DIFFERENZIATA · agg. 21:35"
+    size = style.px(22)
+    offset = size + style.px(6)
+    needed = style.title_font.getlength(text)
+
+    assert _title_icon(style, text, needed + offset - 1, "waste") == (0, 0)
+    assert _title_icon(style, text, needed + offset + 1, "waste") == (size, offset)
+
+
+def test_title_icon_is_absent_when_no_icon_is_asked():
+    style = _build_style((600, 800), "", "")
+
+    assert _title_icon(style, "CALENDARIO", 400, "") == (0, 0)
+
+
+@pytest.mark.parametrize("kind", ["calendar", "waste", "train", "partly", "storm"])
+def test_section_and_weather_icons_paint_ink(kind):
+    image = Image.new("L", (32, 32), "white")
+
+    icons.draw_icon(ImageDraw.Draw(image), kind, (0, 0, 32, 32))
+
+    assert image.getextrema()[0] < 200
+
+
+@pytest.mark.parametrize("kind", ["partly", "storm", "cloud", "rain", "drizzle", "snow", "fog"])
+def test_secondary_elements_use_a_second_tone(kind):
+    """Il secondo tono separa le forme: sole dietro la nuvola, lampo, seconda nuvola, nebbia."""
+    image = Image.new("L", (32, 32), "white")
+
+    icons.draw_icon(ImageDraw.Draw(image), kind, (0, 0, 32, 32))
+
+    levels = set(image.tobytes())
+    assert 0 in levels
+    assert 0x8C in levels
+
+
+def test_section_title_rows_are_taller_than_content_rows():
+    """Si ingrandiscono le intestazioni, non il contenuto: la riga del titolo resta la più alta."""
+    assert _TITLE_ROW_PX > _CALENDAR_ROW_PX
+
+
+def test_the_column_separator_reaches_the_trains_rule():
+    """La linea fra calendario e differenziata scende fino alla regola dei treni."""
+    style = _build_style((600, 800), "", "")
+    data = full_panel()
+    footer_top = 800 - style.margin - style.px(16)
+    trains_top = footer_top - _trains_height(style, data.departures)
+
+    image = render_panel(data, (600, 800))
+
+    band = image.crop(
+        (style.margin + style.px(240), trains_top + style.px(4), style.right, trains_top + style.px(6))
+    )
+    assert band.getextrema()[0] == 0
+
+
+def test_trains_height_counts_title_rows_stops_and_message():
+    style = _build_style((600, 720), "", "")
+    plain = Departure(scheduled=NOW, expected=NOW, line="RV 4137", destination="Roma Termini")
+    with_stops = replace(plain, stops=(CallAt(name="ROMA S.PIETRO", when=NOW),))
+
+    assert _trains_height(style, ()) == style.px(56) + style.px(28)
+    assert _trains_height(style, (plain,)) == style.px(56) + style.px(44)
+    assert _trains_height(style, (plain, with_stops)) == (
+        style.px(56) + 2 * style.px(44) + style.px(26)
+    )
+
+
+def test_trains_block_is_anchored_to_the_bottom():
+    """Con l'agenda vuota i treni stanno in fondo, non a metà pagina con il vuoto sotto."""
+    style = _build_style((600, 800), "", "")
+    footer_top = 800 - style.margin - style.px(16)
+    panel = PanelData(
+        generated_at=NOW,
+        timezone="Europe/Rome",
+        departures=(
+            Departure(scheduled=NOW, expected=NOW, line="RV 4137", destination="Roma Termini"),
+            Departure(scheduled=NOW, expected=NOW, line="RV 4142", destination="Roma Ostiense"),
+        ),
+        departures_sync=Sync(updated_at=NOW),
+    )
+
+    image = render_panel(panel, (600, 800))
+
+    band = image.crop((0, footer_top - style.px(60), 600, footer_top))
+    assert band.getextrema()[0] == 0

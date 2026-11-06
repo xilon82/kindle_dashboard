@@ -309,9 +309,24 @@ passano sempre `config.panel.width/height`.
 ### 5.2 Font
 
 `fonts.load(size, bold=…)` è una funzione pura con `@functools.cache`: cerca in ordine i TTF di
-sistema (Segoe UI Semibold, Verdana, Segoe UI, Arial, Tahoma), accetta un override da configurazione
-(`[render] font`/`font_bold`) e **non fallisce mai**: se non trova nulla usa
-`ImageFont.load_default(size)`.
+sistema, accetta un override da configurazione (`[render] font`/`font_bold`) e **non fallisce mai**.
+
+La ricerca è **multipiattaforma**: `%WINDIR%\Fonts` su Windows, `/System/Library/Fonts` e
+`/Library/Fonts` su macOS, `/usr/share/fonts/truetype/{dejavu,liberation,noto}` (più
+`/usr/share/fonts/TTF` e `/usr/local/share/fonts`) su Linux. L'ordine dei nomi parte dai semibold di
+Windows e prosegue con DejaVu, Liberation e Noto, che sono i font che un container Debian installa
+davvero.
+
+**Il bug che ha imposto questa ricerca**: guardando solo la cartella di Windows, il container
+ricadeva su `ImageFont.load_default(size)`, il font incorporato di Pillow, che non ha le accentate
+né il segno di moltiplicazione: sul pannello si leggevano `Mamma e pap□a` e `Visita casa □mamma`.
+Ora `missing_glyphs()` confronta il bounding box di ogni carattere con quello di un codepoint
+inesistente (U+E000, che Pillow disegna sempre identico) e `load()` preferisce il primo candidato che
+copre `REQUIRED_GLYPHS` (`°·…×àèéìòù`). `tests/test_fonts.py` impedisce il ritorno del difetto.
+
+Attenzione alle conseguenze sui layout: con un font diverso cambiano **tutte** le misure, quindi le
+regole di cedimento (icona del titolo, riga dei dettagli, colonne dei treni) vanno tenute: sono l'unico
+modo perché il pannello resti leggibile anche quando il font non è quello su cui è tarato.
 
 Scelta controintuitiva ma voluta: anche il "regular" è **semibold**. Su e-ink un tratto di 1 px
 sparisce o sfarfalla; in semibold il testo resta nero e leggibile.
@@ -330,7 +345,7 @@ indice**, così sigla e nome non possono divergere. Gli intermedi seguono le let
 prima dà il primo nome, il resto il secondo (`OSO` = Ponente-Libeccio, `NNO` =
 Tramontana-Maestrale) — e si legge subito a quale cardinale il nome è legato.
 
-### 5.4 Icone meteo vettoriali (`render/icons.py`)
+### 5.4 Icone vettoriali (`render/icons.py`)
 
 I glifi sono disegnati con primitive Pillow: cerchi pieni, ellissi, poligoni, linee con spessore
 proporzionale alla dimensione (`max(3, size // 14)`). **Niente emoji**: i font di sistema non le
@@ -341,11 +356,28 @@ garantiscono e su e-ink arriverebbero a colori o come quadratini.
 - **mare**: quattro livelli di agitazione (`sea_calm`, `sea_slight`, `sea_moderate`, `sea_rough`),
   presi dalla stessa tabella Douglas che produce forza e parola;
 - **righe di dettaglio**: `person`, `humidity`, `umbrella`, `wind`, `sunrise`, `sunset`,
-  `arrow_up`/`arrow_down`.
+  `arrow_up`/`arrow_down`;
+- **titoli di sezione**: `calendar`, `waste`, `train`.
 
 Regola comune: dove il glifo è piccolo si disegna **pieno**, senza contorno. A 20 px un tratto da
-3 px mangia la forma: è la ragione per cui la persona è un busto stilizzato e l'umidità è una goccia
-fatta di un triangolo sovrapposto a un cerchio.
+3 px mangia la forma: è la ragione per cui la persona è un busto stilizzato, l'umidità è una goccia
+fatta di un triangolo sovrapposto a un cerchio e il treno è un frontale con due ruote.
+
+**Secondo tono.** Gli elementi che stanno *dietro* sono in `_PALE` (`#8c8c8c`, metà scala
+dell'immagine in grigi) e quelli davanti in nero: il sole raggiato di `partly`, la **calotta di sole
+senza raggi** che in `cloud`/`rain`/`drizzle`/`snow` esce da dietro la nuvola (`_cloud_with_sun`), il
+lampo di `storm`, le righe di `fog`. È l'alternativa ai contorni, che a 20 px mangerebbero il disegno;
+il resto resta nero pieno, perché un grigio debole su e-ink si sbiadisce.
+
+Il secondo tono colora **il pezzo che nella sagoma originale sta dietro**, non aggiunge un elemento:
+la prima versione metteva un sole raggiato in più e si leggevano due soli nello stesso glifo. In
+`_cloud_with_sun` la geometria è quella di sempre (due cerchi e una base) e cambia solo il
+riempimento del cerchio alto a destra, che è il sole coperto.
+
+I glifi di sezione (`calendar`, `waste`, `train`) seguono la geometria di **Bootstrap Icons** (MIT)
+tradotta in primitive: calendario con anelli e riga bianca dell'intestazione, bidone con tre stecche
+bianche, treno con finestrino e feritoia. Le librerie di icone si guardano per le proporzioni, non si
+importano: il progetto resta senza asset esterni.
 
 ### 5.5 Impaginazione: un budget verticale, non un layout libero
 
@@ -357,16 +389,35 @@ margin 22 → data (sx) · luogo (dx)
 ──────────────── divider (_section_rule: nessun titolo "METEO")
           3 colonne: icona + giorno/temperature + riga del mare       _FORECAST_ROW_SEA_PX = 58
 ────────────────
-CALENDARIO │ DIFFERENZIATA    due colonne quando `[waste]` è configurata
-           │                  (_CALENDAR_ROW_PX = 44, gutter _COLUMN_GUTTER_PX = 16)
-────────────────
-TRENI      spazio riservato in fondo (_TRAIN_ROW_PX = 44, + _STOPS_ROW_PX = 26 con fermate)
+CALENDARIO │ DIFFERENZIATA    due colonne quando `[waste]` è configurata, icona nel titolo
+           │                  (_CALENDAR_ROW_PX = 44, _EVENTS_SHARE = 0.60,
+           │                   gutter _COLUMN_GUTTER_PX = 16) e il divisore scende fino alla regola
+────────────────  dei treni
+TRENI      ancorato al fondo: `footer_top - _trains_height`, icona nel titolo
+           (_TRAIN_ROW_PX = 44, + _STOPS_ROW_PX = 26 con fermate)
 footer     "dati HH:MM · treni in tempo reale"
 ```
 
-Regola: **i treni hanno lo spazio riservato in fondo**, perché sono il dato con la scadenza più
-stretta; se il calendario non ci sta si troncano le sue righe, non i treni. `render_panel` calcola
-l'altezza del blocco treni *prima* di disegnare e passa un limite (`bottom`) al blocco agenda.
+Regola: **i treni sono ancorati al fondo**, perché sono il dato con la scadenza più stretta. L'altezza
+del blocco viene da `_trains_height` (titolo, una riga per partenza, la riga delle fermate dove ci
+sono, oppure la riga del messaggio quando l'elenco è vuoto) e `render_panel` passa
+`footer_top - altezza` sia a `_draw_trains` sia come limite `bottom` dell'agenda: se il calendario non
+ci sta si troncano le sue righe, non i treni. Prima il blocco partiva dalla `y` restituita
+dall'agenda e lasciava ~70 px di bianco sopra il footer; con l'agenda vuota restava addirittura a metà
+pagina.
+
+I titoli delle sezioni hanno un'icona (`calendar`, `waste`, `train`) allineata al centro
+dell'inchiostro del titolo. `_title_icon` decide se c'è spazio: se il titolo con `· agg. HH:MM` non ci
+sta, l'icona **non viene disegnata** e il testo resta intero — nella colonna della differenziata
+(216 px con `_EVENTS_SHARE = 0.60`) a 600×720 l'icona entra nel caso normale e cede quando c'è
+`· agg.`, a 600×800 quel suffisso si tronca.
+
+Si ingrandiscono **le intestazioni, non il contenuto**: `title_font` 19 e `_TITLE_ROW_PX` 56 per le
+righe di titolo, mentre eventi e differenziata restano su `body_font`/`text_font` e righe da 44 px.
+La prima versione gonfiava anche il contenuto e i riepiloghi degli eventi si troncavano troppo: la
+colonna eventi è preziosa e la sua larghezza non va spesa per i titoli. Il divisore verticale fra le
+due colonne arriva fino alla regola orizzontale dei treni (`bottom + _RULE_TOP_PX`): chiude il blocco
+e non lascia una linea che si ferma a metà.
 
 Il blocco agenda (`_draw_agenda`) disegna **due colonne solo se `PanelData.waste` non è `None`**:
 la colonna eventi prende il 60% di `content_width - gutter`, la differenziata il resto, e il
@@ -626,8 +677,9 @@ kindle_dashboard/
   sources/trains.py    Transitous: stoptimes, trip, geocode
   sources/calendar.py  parser ICS (folding, RRULE, EXDATE, RECURRENCE-ID)
   sources/waste.py     raccolta differenziata: finestra allineata ai giorni
-  render/fonts.py      ricerca TTF con fallback
-  render/icons.py      glifi vettoriali: meteo, mare, umidità, vento, persona, alba/tramonto, frecce
+  render/fonts.py      ricerca TTF multipiattaforma + verifica dei glifi richiesti
+  render/icons.py      glifi vettoriali: meteo (due toni), mare, umidità, vento, persona,
+                       alba/tramonto, frecce, sezioni
   render/layout.py     fit_text, divider, etichette di data, punti cardinali e nomi dei venti
   render/panel.py      composizione del pannello (righe miste testo+icona)
 kindle/                estensione KUAL + deploy.ps1 + allow-lan.ps1

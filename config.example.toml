@@ -47,7 +47,7 @@ station = "Genova Brignole"
 # Ottieni lo stop_id con:
 #   python -m kindle_dashboard resolve-station "Genova Brignole"
 stop_id = "it-trenitalia_04702"
-max_departures = 4
+max_departures = 3
 # Vuoto = tutte le destinazioni. Altrimenti filtra per sottostringa (case-insensitive).
 destinations = []
 # Seconda riga per treno con le fermate intermedie che corrispondono a `destinations`, con orario.

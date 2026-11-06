@@ -61,6 +61,25 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    `_draw_now_details` **a coppie intere** — prima la percepita, poi la pioggia — perché lasciarlo ai
    singoli `required` lascerebbe un'icona senza numero. L'umidità è opzionale (`optional_int`), così
    una cache scritta prima del campo resta disegnabile.
+11. **Le icone hanno due toni**: nero per l'elemento principale, `_PALE` (`#8c8c8c`, metà scala
+   dell'immagine in grigi) per quello che sta **dietro** — il sole coperto di `partly` (con i raggi) e
+   la calotta di sole *senza raggi* di `cloud`/`rain`/`drizzle`/`snow` (via `_cloud_with_sun`), il
+   lampo di `storm`, le righe di `fog`. Serve a separare due forme che si toccano senza contorni, che a
+   20 px mangerebbero il disegno; altrove i glifi restano pieni e neri, perché un grigio debole su
+   e-ink sparisce. Non è un'ombra decorativa né un secondo elemento: il secondo tono va sul pezzo che
+   nella sagoma originale sta dietro, altrimenti si leggono due soli nello stesso glifo. Le icone dei
+   titoli (`_column_title(..., icon=...)`) passano da `_title_icon`, che restituisce `(0, 0)` quando il
+   titolo con `· agg. HH:MM` non ci starebbe: l'icona è decorazione e cede **prima del testo**, che
+   porta l'informazione. I glifi di sezione (`calendar`, `waste`, `train`) seguono la geometria di
+   Bootstrap Icons (MIT) tradotta in primitive — corpo pieno e ritagli bianchi, nessun asset esterno.
+12. **I font si cercano su ogni piattaforma e devono coprire i caratteri del pannello**:
+   `fonts.font_directories()` guarda Windows (`%WINDIR%\Fonts`), macOS e Linux
+   (`/usr/share/fonts/truetype/{dejavu,liberation,noto}`); `REQUIRED_GLYPHS` (`°·…×àèéìòù`) è il
+   minimo che il font scelto deve avere e `missing_glyphs()` lo verifica confrontando il bounding box
+   di ogni carattere con quello di U+E000, che Pillow disegna sempre uguale. Senza questi controlli il
+   container ricadeva sul font incorporato e stampava quadrati al posto delle accentate (bug visto sul
+   device). Il `Dockerfile` installa `fonts-dejavu-core` per la stessa ragione: cambiare font cambia
+   tutte le misure, quindi le regole di cedimento non vanno allentate «perché tanto il font è quello».
 
 ### Configurazione
 
@@ -88,10 +107,11 @@ lo specifica. Una sezione assente disattiva la relativa parte del pannello, non 
 2. Usa `style.px()` per le misure e `fit_text()` per i testi: righe e larghezze dai font. Per una
    riga mista testo+icona usa `_draw_inline` con segmenti `_Segment` (`required=False` sui pezzi che
    possono cedere): il troncamento vive lì e non va duplicato.
-3. Rispetta il budget verticale (`_TITLE_ROW_PX` per il titolo, costante di riga dedicata) e la
-   regola "i treni hanno lo spazio riservato in fondo". Una sezione che si riconosce dalle icone può
-   fare a meno del titolo e usare `_section_rule` (solo separatore): la striscia meteo lo fa e
-   guadagna una riga.
+3. Rispetta il budget verticale (`_TITLE_ROW_PX` per il titolo, costante di riga dedicata): il blocco
+   treni è **ancorato** al fondo (`footer_top - _trains_height`) e l'agenda riceve lo spazio che
+   resta, così i treni non restano a metà pagina quando gli eventi sono pochi. Una sezione che si
+   riconosce dalle icone può fare a meno del titolo e usare `_section_rule` (solo separatore): la
+   striscia meteo lo fa e guadagna una riga.
 4. Aggiorna `tests/test_render.py` e rigenera `preview.png`.
 5. Il blocco agenda (`_draw_agenda`) ha due colonne solo quando `PanelData.waste` non è `None`: le
    larghezze vengono da `_EVENTS_SHARE` e `_COLUMN_GUTTER_PX`, non da pixel scelti a occhio.
