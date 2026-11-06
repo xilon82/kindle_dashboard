@@ -44,10 +44,11 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    nessuno converte nel renderer. La direzione si scrive a 16 settori (`NNE`) ed è **obbligatoria**:
    sulla riga del vento cede il nome tradizionale (`· Levante-Scirocco`), non la sigla. Il nome
    viene da `layout.wind_name()`, che usa lo stesso indice a 16 settori di `compass()`: gli
-   intermedi sono composti dai due venti principali (`ESE` = Levante-Scirocco), così sigla e nome
-   non possono divergere. Il mare viene dalle coordinate di `[location]`, non da
-   una sezione con coordinate proprie, e la sua classificazione (forza Douglas, parola, glifo) è
-   una tabella sola in `sources/marine.py`.
+   intermedi sono composti dai due venti principali nell'ordine delle lettere della sigla
+   (`OSO` = Ponente-Libeccio, `NNO` = Tramontana-Maestrale), così sigla e nome non possono
+   divergere e si legge subito a quale punto cardinale il nome è legato. Il mare viene dalle
+   coordinate di `[location]`, non da una sezione con coordinate proprie, e la sua
+   classificazione (forza Douglas, parola, glifo) è una tabella sola in `sources/marine.py`.
 9. **Le righe miste testo+icona passano da `_draw_inline`**: i pezzi sono `_Segment` con `required`
    falso quando possono cedere (temperatura dell'acqua, nome del vento, frecce di alba/tramonto).
    Larghezze sempre da `font.getlength`, mai pixel scelti a occhio, e le icone si allineano al

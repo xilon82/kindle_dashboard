@@ -20,25 +20,27 @@ COMPASS_POINTS = (
 
 
 # Nomi tradizionali del Mediterraneo, uno per settore. Gli intermedi sono composti dai due venti
-# principali in senso orario (ESE = Levante-Scirocco): "Levante" da solo racconterebbe una
-# direzione che non è quella indicata dalla sigla.
+# principali *nell'ordine delle lettere della sigla*: la prima lettera dà il primo nome, il resto il
+# secondo (OSO = Ponente-Libeccio, NNO = Tramontana-Maestrale). "Levante" da solo racconterebbe una
+# direzione che non è quella indicata dalla sigla, e l'ordine alfabetico evita che lo stesso nome
+# compaia con due grafie: si legge la sigla e si sa a quale punto cardinale è legata.
 WIND_NAMES = (
     "Tramontana",            # N
     "Tramontana-Grecale",    # NNE
     "Grecale",               # NE
-    "Grecale-Levante",       # ENE
+    "Levante-Grecale",       # ENE
     "Levante",               # E
     "Levante-Scirocco",      # ESE
     "Scirocco",              # SE
-    "Scirocco-Ostro",        # SSE
+    "Ostro-Scirocco",        # SSE
     "Ostro",                 # S
     "Ostro-Libeccio",        # SSO
     "Libeccio",              # SO
-    "Libeccio-Ponente",      # OSO
+    "Ponente-Libeccio",      # OSO
     "Ponente",               # O
     "Ponente-Maestrale",     # ONO
     "Maestrale",             # NO
-    "Maestrale-Tramontana",  # NNO
+    "Tramontana-Maestrale",  # NNO
 )
 
 

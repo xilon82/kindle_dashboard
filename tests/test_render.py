@@ -21,7 +21,7 @@ from kindle_dashboard.model import (
     WeatherNow,
 )
 from kindle_dashboard.render import fonts
-from kindle_dashboard.render.layout import compass, waste_day_label, wind_name
+from kindle_dashboard.render.layout import COMPASS_POINTS, WIND_NAMES, compass, waste_day_label, wind_name
 from kindle_dashboard.render.panel import (
     _clock_label,
     _fit_inline,
@@ -473,25 +473,38 @@ def test_sun_segments_are_empty_without_a_forecast():
         (0, "Tramontana"),
         (18, "Tramontana-Grecale"),
         (45, "Grecale"),
-        (68, "Grecale-Levante"),
+        (68, "Levante-Grecale"),
         (90, "Levante"),
         (113, "Levante-Scirocco"),
         (137, "Scirocco"),
-        (158, "Scirocco-Ostro"),
+        (158, "Ostro-Scirocco"),
         (180, "Ostro"),
         (203, "Ostro-Libeccio"),
         (225, "Libeccio"),
-        (248, "Libeccio-Ponente"),
+        (248, "Ponente-Libeccio"),
         (270, "Ponente"),
         (293, "Ponente-Maestrale"),
         (315, "Maestrale"),
-        (340, "Maestrale-Tramontana"),
+        (340, "Tramontana-Maestrale"),
         (359, "Tramontana"),
         (None, ""),
     ],
 )
 def test_wind_name_covers_all_sixteen_sectors(degrees, expected):
     assert wind_name(degrees) == expected
+
+
+def test_intermediate_wind_names_follow_the_letters_of_the_compass_point():
+    """La prima lettera della sigla dà il primo nome, il resto il secondo (``OSO`` = Ponente-Libeccio).
+
+    La regola si verifica contro gli otto venti principali della stessa tabella: se qualcuno riordina
+    una coppia a occhio, il test cade e le due grafie non possono divergere.
+    """
+    main_winds = {COMPASS_POINTS[index]: WIND_NAMES[index] for index in range(0, 16, 2)}
+
+    for index in range(1, 16, 2):
+        point = COMPASS_POINTS[index]
+        assert WIND_NAMES[index] == f"{main_winds[point[0]]}-{main_winds[point[1:]]}"
 
 
 def test_sea_block_shows_state_height_and_water_temperature():

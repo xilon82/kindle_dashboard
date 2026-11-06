@@ -308,7 +308,7 @@ def _draw_balanced_row(
 ) -> None:
     """Riga a due colonne: il blocco sinistro ha la precedenza, il destro riceve il resto.
 
-    Serve al vento: ``Maestrale-Tramontana`` è lungo e con una quota fissa a metà riga verrebbe
+    Serve al vento: ``Tramontana-Maestrale`` è lungo e con una quota fissa a metà riga verrebbe
     scartato. Il destro scende sotto metà larghezza solo quando il sinistro la occupa davvero, e
     a cedere è la temperatura dell'acqua, non il nome del vento.
     """
