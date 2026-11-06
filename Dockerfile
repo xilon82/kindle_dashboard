@@ -16,9 +16,10 @@ RUN pip install --no-cache-dir --prefix=/install -e .
 # ---------- STAGE 2: runtime ----------
 FROM python:3.12-slim AS runtime
 
-# Solo librerie runtime necessarie a Pillow + tzdata
+# Solo librerie runtime necessarie a Pillow + tzdata, più un font vero: senza TTF Pillow usa il
+# font incorporato, che non ha le accentate né "×" e le disegna come quadrati nel pannello.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libjpeg62-turbo zlib1g tzdata && rm -rf /var/lib/apt/lists/*
+    libjpeg62-turbo zlib1g tzdata fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 
 # Utente non-root (sicurezza)
 RUN useradd --uid 1000 --create-home --shell /bin/bash appuser

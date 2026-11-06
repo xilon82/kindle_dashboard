@@ -106,7 +106,7 @@ rimuove container e rete ma **non** l'immagine né `config.toml`/`cache/`, che s
 | Stage | Base | Contenuto | A cosa serve |
 |---|---|---|---|
 | `builder` | `python:3.12-slim` | `gcc`, `libjpeg-dev`, `zlib1g-dev`, `pip install --prefix=/install -e .` | compilare le dipendenze |
-| `runtime` | `python:3.12-slim` | `libjpeg62-turbo`, `zlib1g`, `tzdata`, i sorgenti in `/home/appuser`, `/install` | far girare il servizio |
+| `runtime` | `python:3.12-slim` | `libjpeg62-turbo`, `zlib1g`, `tzdata`, **`fonts-dejavu-core`**, i sorgenti in `/home/appuser`, `/install` | far girare il servizio |
 
 Tutto ciò che serve a *compilare* resta nel `builder` e non finisce nell'immagine finale: il
 risultato è molto più piccolo e ha meno superficie d'attacco. Nel runtime entrano solo le librerie

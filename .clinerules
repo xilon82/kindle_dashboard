@@ -107,6 +107,12 @@ Errori realmente accaduti qui, da non ripetere:
     installa `pytest`; in più l'`ENTRYPOINT` è la CLI, quindi `docker compose run --rm dashboard
     pytest` risponde `invalid choice: 'pytest'`. Il gate resta nel venv (`python -m pytest -q`,
     `python -m ruff check .`); per test in container serve un'immagine di sviluppo separata.
+19. **Un container senza font stampa quadratini**: `fonts.py` cercava solo in `%WINDIR%\Fonts`, quindi
+    su Linux ricadeva sul font incorporato di Pillow, che non ha le accentate: «Mamma e papà»
+    diventava «Mamma e pap□a» (visto sullo screen del device). Ora la ricerca è multipiattaforma,
+    `REQUIRED_GLYPHS`/`missing_glyphs()` verificano la copertura e il `Dockerfile` installa
+    `fonts-dejavu-core`. Quando introduci un carattere nuovo nel pannello, aggiungilo a
+    `REQUIRED_GLYPHS` e guarda il PNG: di un quadratino nessun test se ne accorge da solo.
 
 ## §Workflow
 
