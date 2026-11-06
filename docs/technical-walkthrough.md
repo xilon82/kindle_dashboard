@@ -314,8 +314,11 @@ sistema, accetta un override da configurazione (`[render] font`/`font_bold`) e *
 La ricerca è **multipiattaforma**: `%WINDIR%\Fonts` su Windows, `/System/Library/Fonts` e
 `/Library/Fonts` su macOS, `/usr/share/fonts/truetype/{dejavu,liberation,noto}` (più
 `/usr/share/fonts/TTF` e `/usr/local/share/fonts`) su Linux. L'ordine dei nomi parte dai semibold di
-Windows e prosegue con DejaVu, Liberation e Noto, che sono i font che un container Debian installa
-davvero.
+Windows e prosegue con **Liberation prima di DejaVu** e poi Noto, cioè dal font più stretto al più
+largo fra quelli che un container Debian installa davvero. L'ordine dei nomi conta più di quello
+delle cartelle: `load()` scorre `name` esterno e `directory` interno, perché iterando prima le
+cartelle vinceva `dejavu/` (che su Debian precede `liberation/`) e la lista dei nomi diventava
+decorativa.
 
 **Il bug che ha imposto questa ricerca**: guardando solo la cartella di Windows, il container
 ricadeva su `ImageFont.load_default(size)`, il font incorporato di Pillow, che non ha le accentate
@@ -323,6 +326,26 @@ né il segno di moltiplicazione: sul pannello si leggevano `Mamma e pap□a` e `
 Ora `missing_glyphs()` confronta il bounding box di ogni carattere con quello di un codepoint
 inesistente (U+E000, che Pillow disegna sempre identico) e `load()` preferisce il primo candidato che
 copre `REQUIRED_GLYPHS` (`°·…×àèéìòù`). `tests/test_fonts.py` impedisce il ritorno del difetto.
+
+**Il secondo bug, meno visibile e più insidioso**: la copertura dei glifi non basta. Le colonne si
+dimensionano con `font.getlength`, quindi un font più largo del Segoe UI Semibold di sviluppo non
+«ruba» pixel: supera il budget e il testo diventa ellissi. Con `fonts-dejavu-core` il PNG del
+container mostrava `04:37 REG 12…`, `SAB 18°/…`, `Ale incontro y…` e `poco mosso` senza altezza
+d'onda, mentre l'anteprima sullo stesso `PanelData` era integra: DejaVu Sans Bold è ~1,30x il
+Segoe UI Semibold (il regular ~1,17x). Misurando i candidati Debian sullo stesso testo:
+
+| Font | larghezza vs Segoe UI Semibold (regular / bold) | inchiostro a 22 px |
+|---|---|---|
+| `fonts-liberation` | 1,05x / 1,08x | 6,9% / 9,2% |
+| `fonts-open-sans` | 1,07x / 1,13x | 7,9% / 9,7% |
+| `fonts-dejavu-core` | 1,17x / 1,30x | 6,9% / 9,5% |
+| DejaVu Sans **Condensed** (`fonts-dejavu-extra`) | 1,05x / 1,16x | 6,6% / — |
+
+Liberation Sans vince perché è la più stretta e mantiene il peso del tratto (6,9% di inchiostro, come
+DejaVu: nessuna regressione di leggibilità rispetto a prima). Il `Dockerfile` installa
+`fonts-liberation` come primario e `fonts-dejavu-core` come riserva di copertura; il PNG del container
+torna sovrapponibile all'anteprima sul PC, con l'unico troncamento che c'è anche in sviluppo (eventi
+oltre ~26 caratteri nella colonna da 60%).
 
 Attenzione alle conseguenze sui layout: con un font diverso cambiano **tutte** le misure, quindi le
 regole di cedimento (icona del titolo, riga dei dettagli, colonne dei treni) vanno tenute: sono l'unico
@@ -338,6 +361,16 @@ sparisce o sfarfalla; in semibold il testo resta nero e leggibile.
 treno nel PNG (bug reale, scoperto guardando l'immagine e non dal linter). Le colonne della tabella
 treni (`_measure_columns`) sono misurate sul font reale, con un tetto percentuale per non sbilanciare
 la destinazione.
+
+`layout.wrap_text(text, font, max_width, lines=2)` è il passo successivo: spezza il testo su uno
+spazio (mai dentro una parola) e lascia l'ellissi all'ultima riga, così il numero di righe è noto
+**prima** di disegnare e la riga può essere alta il giusto. L'agenda lo usa per il riassunto degli
+eventi: 227 px di colonna su una riga non bastano per `Visita casa ×mamma e papà`, ma su due righe
+sì. Il dettaglio che rende la cosa sicura è l'ordine dei passi in `_draw_events`: prima si contano gli
+eventi che ci starebbero su una riga sola (`room // row`), si riserva una riga a ciascuno e solo lo
+spazio **avanzato** diventa una seconda riga; se non basta si torna a `lines=1` con l'ellissi.
+Senza questa prenotazione un evento lungo si sarebbe preso la riga del successivo: sull'e-ink, dove
+il pannello si guarda di sfuggita, un evento che sparisce è peggio di una parola tagliata.
 
 `render/layout.py` ospita anche le etichette della rosa dei venti: `compass()` scrive la direzione a
 16 settori (`NNE`) e `wind_name()` il nome tradizionale (`Tramontana-Grecale`) dallo **stesso
@@ -677,7 +710,7 @@ kindle_dashboard/
   sources/trains.py    Transitous: stoptimes, trip, geocode
   sources/calendar.py  parser ICS (folding, RRULE, EXDATE, RECURRENCE-ID)
   sources/waste.py     raccolta differenziata: finestra allineata ai giorni
-  render/fonts.py      ricerca TTF multipiattaforma + verifica dei glifi richiesti
+  render/fonts.py      ricerca TTF multipiattaforma: glifi richiesti e metriche vicine
   render/icons.py      glifi vettoriali: meteo (due toni), mare, umidità, vento, persona,
                        alba/tramonto, frecce, sezioni
   render/layout.py     fit_text, divider, etichette di data, punti cardinali e nomi dei venti

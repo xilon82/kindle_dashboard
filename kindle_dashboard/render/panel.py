@@ -25,12 +25,17 @@ from .layout import (
     relative_day,
     waste_day_label,
     wind_name,
+    wrap_text,
 )
 
 DEFAULT_SIZE = (600, 800)
 _BASE_HEIGHT = 800
 _TITLE_ROW_PX = 56
 _CALENDAR_ROW_PX = 44
+# Passo fra le righe di un evento su due righe. Il riassunto va a capo solo quando la riga in più
+# sta sopra `bottom`: allargare la riga senza questo limite farebbe sparire un evento intero, che
+# è peggio di un'ellissi.
+_CALENDAR_LINE_PX = 26
 _TRAIN_ROW_PX = 44
 _STOPS_ROW_PX = 26
 # Riga del messaggio "nessuna partenza in vista": serve anche a `_trains_height`, perché il
@@ -624,19 +629,29 @@ def _draw_events(
 
     today = _moment(data).date()
     row = style.px(_CALENDAR_ROW_PX)
-    for event in data.events:
-        if y + row > bottom:
-            break
+    step = style.px(_CALENDAR_LINE_PX)
+    # Prima si contano gli eventi che ci starebbero su una riga sola: quel numero è il pavimento,
+    # e le righe in più del riassunto si prendono solo dallo spazio che avanza. Così il testo lungo
+    # non può far sparire l'evento successivo (peggio dell'ellissi che si voleva evitare).
+    room = bottom - y
+    count = min(len(data.events), max(0, room // row))
+    for index, event in enumerate(data.events[:count]):
         when = _event_when(event, today)
         when_width = max(style.px(52), style.body_font.getlength(when) + style.px(10))
+        summary_width = right - left - when_width
+        lines = wrap_text(event.summary, style.text_font, summary_width)
+        height = row + max(0, len(lines) - 1) * step
+        reserved = (count - index - 1) * row
+        if height > room - reserved:
+            lines = wrap_text(event.summary, style.text_font, summary_width, lines=1)
+            height = row
         draw.text((left, y), when, font=style.body_font, fill="black")
-        draw.text(
-            (left + when_width, y),
-            fit_text(event.summary, style.text_font, right - left - when_width),
-            font=style.text_font,
-            fill="black",
-        )
-        y += row
+        for offset, line in enumerate(lines):
+            draw.text(
+                (left + when_width, y + offset * step), line, font=style.text_font, fill="black"
+            )
+        y += height
+        room -= height
 
 
 def _draw_waste(

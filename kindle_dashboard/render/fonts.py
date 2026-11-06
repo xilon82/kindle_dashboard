@@ -4,7 +4,10 @@ Su e-ink i tratti sottili spariscono, quindi anche il "regular" usa pesi semibol
 
 La ricerca è **multipiattaforma**: limitarla a `%WINDIR%\\Fonts` faceva ricadere il container Linux
 sul font incorporato di Pillow, che non ha le accentate né il segno di moltiplicazione: sul PNG
-comparivano dei quadratini.
+comparivano dei quadratini. La scelta non è però solo di copertura: le colonne del pannello si
+dimensionano con `font.getlength`, quindi un font più largo di quello di sviluppo si traduce in
+testo troncato. Per questo i candidati di Linux sono ordinati dal più stretto (Liberation, metrica
+Arial) al più largo (DejaVu), non nell'ordine in cui i pacchetti li installano.
 """
 
 from __future__ import annotations
@@ -18,16 +21,20 @@ from PIL import ImageFont
 
 Font = ImageFont.FreeTypeFont | ImageFont.ImageFont
 
-# Prima i pesi semibold (su e-ink il tratto sottile sparisce), poi i bold; in coda i font che su
-# Linux si trovano davvero, nell'ordine in cui `fonts-dejavu-core` li installa.
+# Prima i pesi semibold (su e-ink il tratto sottile sparisce), poi i bold. Dopo i font di Windows
+# vengono i due che su Linux si trovano davvero, **Liberation prima di DejaVu**: il renderer misura
+# le larghezze con `getlength`, quindi un font più largo non «ruba» pixel, diventa ellissi. A parità
+# di testo DejaVu Sans Bold è ~1,30x il Segoe UI Semibold di sviluppo (e 1,17x il regular) e nel
+# container troncava "REG 12519" e i nomi degli eventi; Liberation, che ha la metrica di Arial, sta
+# in 1,05-1,08x e il pannello torna uguale all'anteprima sul PC.
 _REGULAR_CANDIDATES = (
     "seguisb.ttf",
     "verdana.ttf",
     "segoeui.ttf",
     "arial.ttf",
     "tahoma.ttf",
-    "DejaVuSans.ttf",
     "LiberationSans-Regular.ttf",
+    "DejaVuSans.ttf",
     "NotoSans-Regular.ttf",
 )
 _BOLD_CANDIDATES = (
@@ -36,8 +43,8 @@ _BOLD_CANDIDATES = (
     "verdanab.ttf",
     "arialbd.ttf",
     "tahomabd.ttf",
-    "DejaVuSans-Bold.ttf",
     "LiberationSans-Bold.ttf",
+    "DejaVuSans-Bold.ttf",
     "NotoSans-Bold.ttf",
 )
 # Caratteri che il pannello usa davvero (gradi, separatori, ellissi, accenti italiani, segno di
@@ -77,10 +84,14 @@ def load(size: int, *, bold: bool = False, override: str = "") -> Font:
 
     Fra i candidati si preferisce il primo che copre `REQUIRED_GLYPHS`: uno che li copre solo in
     parte disegnerebbe dei quadrati al posto delle accentate.
+
+    L'ordine è **per nome, poi per cartella** (``name`` esterno, ``directory`` interno): iterando
+    prima le cartelle vinceva la prima cartella di `font_directories()` — su Debian ``dejavu`` viene
+    prima di ``liberation`` — e la lista dei nomi diventava inutile nel container.
     """
     names = _BOLD_CANDIDATES if bold else _REGULAR_CANDIDATES
     candidates = [Path(override)] if override else []
-    candidates.extend(directory / name for directory in font_directories() for name in names)
+    candidates.extend(directory / name for name in names for directory in font_directories())
     partial: Font | None = None
     for path in candidates:
         if not path.is_file():

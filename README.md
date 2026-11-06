@@ -68,6 +68,11 @@ Google Calendar > Impostazioni del calendario > *Indirizzo segreto in formato iC
 in `calendar.ics_url`. In alternativa usa la variabile d'ambiente `KDASH_ICS_URL`, che ha la
 precedenza solo se il file non specifica nulla: utile per non scrivere la credenziale su disco.
 
+Il titolo dell'evento che non entra nella colonna **va a capo su una seconda riga**, rientrata sotto
+il titolo; il taglio cade sempre su uno spazio, mai dentro una parola. La seconda riga si prende solo
+lo spazio che avanza: se non basta si torna a una riga sola con i puntini, e il numero di eventi
+mostrati resta quello di prima — un evento lungo non può far sparire quello successivo.
+
 ### Raccolta differenziata
 
 Se il comune pubblica i giorni di raccolta come calendario iCal (un evento all-day per giorno, il
@@ -307,7 +312,8 @@ Tutti accettano `--config <file>` dopo il sottocomando.
 | Sintomo | Causa e rimedio |
 |---|---|
 | `fuso orario 'Europe/Rome' non disponibile` | manca `tzdata`: `python -m pip install tzdata` |
-| Nel pannello compaiono quadratini al posto delle accentate o del segno di moltiplicazione | il font scelto non ha quei caratteri: succede dove non è installato nessun TTF (container minimale), e Pillow usa un font incorporato incompleto | installa un font di sistema (su Debian/Ubuntu `fonts-dejavu-core`) oppure indica un `.ttf` in `[render] font` e `font_bold` |
+| Nel pannello compaiono quadratini al posto delle accentate o del segno di moltiplicazione | il font scelto non ha quei caratteri: succede dove non è installato nessun TTF, e Pillow usa un font incorporato incompleto | installa un font di sistema (su Debian/Ubuntu `fonts-liberation`, `fonts-dejavu-core` come riserva) oppure indica un `.ttf` in `[render] font` e `font_bold` |
+| Nel container le righe finiscono con `…` (`REG 12…`, `SAB 18°/…`, `poco mosso`) mentre l'anteprima sul PC è integra | il container usa un font più largo di quello di sviluppo e le colonne, misurate con `font.getlength`, tagliano il testo | l'immagine installa `fonts-liberation` (metrica Arial, 1,05-1,08x il Segoe UI Semibold): ricostruisci **e ricrea** con `docker compose build` + `docker compose up -d`; verifica con `docker exec kindle-dashboard ls /usr/share/fonts/truetype` (deve comparire `liberation`). Per il confronto usa `python -m kindle_dashboard render -o preview.png` sul PC |
 | Il Kindle non scarica nulla | verifica `http://<ip>:8787/panel.png` dal PC, poi dallo stesso URL nel browser del Kindle; controlla la regola firewall sulla rete privata |
 | Dal browser del Kindle "impossibile connettersi" | la rete è classificata **Public** da Windows e la regola `Private` non si applica: lancia `kindle\allow-lan.ps1` come amministratore (riclassifica la rete e apre la porta). Se alterni 2.4/5 GHz, usa `-AnyProfile`: il profilo firewall è per SSID, quindi cambiando banda la regola `Private` smetterebbe di valere |
 | Il Kindle non vede la rete Wi-Fi del PC | SSID a 5 GHz: il Kindle 4 ha solo radio 2.4 GHz, collegalo all'SSID 2.4 GHz dello stesso router (stessa subnet, senza "AP isolation") |

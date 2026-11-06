@@ -39,7 +39,11 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    il device non deve scalare nulla.
 6. **Le larghezze di colonna si misurano con `font.getlength`**, mai con pixel fissi.
 7. **L'intervallo di aggiornamento si calcola solo in `schedule.py`**: fascia corrente e clamp al
-   prossimo cambio. Server e renderer leggono quel risultato, non lo ricalcolano.
+   prossimo cambio. Server e renderer leggono quel risultato, non lo ricalcolano. La stessa regola
+   vale per la fascia notturna che decide `NOTTE` al posto dell'orologio: `is_night()` sta lì,
+   `collect()` la applica ai dati raccolti e il server la **ricalcola all'istante del render** (i
+   dati possono essere più vecchi di un'ora, l'orologio no); `python -m kindle_dashboard render`
+   legge il valore di `collect()`, così anteprima e PNG servito mostrano la stessa cosa.
 8. **Il vento è in nodi** (`wind_speed_unit=kn`): modello, header e striscia usano la stessa unità e
    nessuno converte nel renderer. La direzione si scrive a 16 settori (`NNE`) ed è **obbligatoria**:
    sulla riga del vento cede il nome tradizionale (`· Levante-Scirocco`), non la sigla. Il nome
@@ -72,14 +76,24 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    titolo con `· agg. HH:MM` non ci starebbe: l'icona è decorazione e cede **prima del testo**, che
    porta l'informazione. I glifi di sezione (`calendar`, `waste`, `train`) seguono la geometria di
    Bootstrap Icons (MIT) tradotta in primitive — corpo pieno e ritagli bianchi, nessun asset esterno.
-12. **I font si cercano su ogni piattaforma e devono coprire i caratteri del pannello**:
-   `fonts.font_directories()` guarda Windows (`%WINDIR%\Fonts`), macOS e Linux
-   (`/usr/share/fonts/truetype/{dejavu,liberation,noto}`); `REQUIRED_GLYPHS` (`°·…×àèéìòù`) è il
-   minimo che il font scelto deve avere e `missing_glyphs()` lo verifica confrontando il bounding box
-   di ogni carattere con quello di U+E000, che Pillow disegna sempre uguale. Senza questi controlli il
+12. **I font si cercano su ogni piattaforma, devono coprire i caratteri del pannello e devono avere
+   metriche vicine a quelle di sviluppo**: `fonts.font_directories()` guarda Windows
+   (`%WINDIR%\Fonts`), macOS e Linux (`/usr/share/fonts/truetype/{dejavu,liberation,noto}`, più
+   `/usr/share/fonts/TTF` e `/usr/local/share/fonts`); `REQUIRED_GLYPHS` (`°·…×àèéìòù`) è il minimo
+   che il font scelto deve avere e `missing_glyphs()` lo verifica confrontando il bounding box di
+   ogni carattere con quello di U+E000, che Pillow disegna sempre uguale. Senza questi controlli il
    container ricadeva sul font incorporato e stampava quadrati al posto delle accentate (bug visto sul
-   device). Il `Dockerfile` installa `fonts-dejavu-core` per la stessa ragione: cambiare font cambia
-   tutte le misure, quindi le regole di cedimento non vanno allentate «perché tanto il font è quello».
+   device).
+   La copertura non basta: le colonne si dimensionano con `font.getlength`, quindi un font più largo
+   del Segoe UI Semibold di sviluppo non «ruba» pixel, **diventa ellissi**. Nel container il bold di
+   DejaVu Sans è ~1,30x (regular ~1,17x) e tagliava `REG 12519` in `REG 12…`, `SAB 18°/12°` in
+   `SAB 18°/…` e `poco mosso 0.8m` in `poco mosso`; Liberation Sans, che ha la metrica di Arial, sta
+   in 1,05-1,08x e rende il PNG del container uguale all'anteprima sul PC. Per questo il `Dockerfile`
+   installa `fonts-liberation` (primario) e `fonts-dejavu-core` (riserva di copertura), e per questo
+   in `load()` i candidati sono ordinati **per nome e poi per cartella**: con il ciclo
+   cartella-major la prima cartella di `font_directories()` (`dejavu` su Debian) vinceva su tutto e
+   la lista dei nomi non contava nulla. Cambiare font cambia tutte le misure, quindi le regole di
+   cedimento non vanno allentate «perché tanto il font è quello».
 
 ### Configurazione
 
@@ -115,6 +129,12 @@ lo specifica. Una sezione assente disattiva la relativa parte del pannello, non 
 4. Aggiorna `tests/test_render.py` e rigenera `preview.png`.
 5. Il blocco agenda (`_draw_agenda`) ha due colonne solo quando `PanelData.waste` non è `None`: le
    larghezze vengono da `_EVENTS_SHARE` e `_COLUMN_GUTTER_PX`, non da pixel scelti a occhio.
+6. **Il riassunto di un evento va a capo su due righe** (`layout.wrap_text`, passo
+   `_CALENDAR_LINE_PX`) ma solo con lo spazio che avanza: `_draw_events` conta prima quanti eventi
+   stanno su una riga sola (`room // row`) e riserva una riga a ciascuno, poi concede la seconda
+   riga solo a chi ci sta dentro il margine. La regola non è cosmetica: senza prenotazione un evento
+   lungo si prende lo spazio del successivo e lo fa sparire, che è peggio dell'ellissi che si voleva
+   evitare. `wrap_text(text, font, width, lines=1)` è il ritorno all'ellissi quando non c'è spazio.
 
 ### Nuovo comando CLI
 1. `commands.add_parser(..., parents=[common])` in `_build_parser()` (il parent fornisce `--config`).

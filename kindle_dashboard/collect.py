@@ -11,6 +11,7 @@ from .cache import Cache
 from .config import Config
 from .exceptions import SourceError
 from .model import CalEvent, Departure, PanelData, Sea, Sync, WasteDay, Weather
+from .schedule import is_night
 from .sources import calendar as calendar_source
 from .sources import marine as marine_source
 from .sources import trains as trains_source
@@ -33,6 +34,11 @@ def collect(config: Config, cache: Cache, now: datetime | None = None) -> PanelD
     return PanelData(
         generated_at=moment,
         timezone=config.timezone,
+        # La fascia notturna si calcola con la stessa regola del server (`schedule.is_night`):
+        # senza questa riga l'anteprima di `render` mostrava l'orologio dove il Kindle mostra
+        # `NOTTE`. Il server la ricalcola all'istante del render, perché i dati possono essere
+        # più vecchi di un'ora mentre l'orologio no.
+        night=is_night(moment, config.schedule),
         weather=weather,
         weather_sync=weather_sync,
         sea=sea,

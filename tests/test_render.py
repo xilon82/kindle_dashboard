@@ -23,12 +23,20 @@ from kindle_dashboard.model import (
     WeatherNow,
 )
 from kindle_dashboard.render import fonts, icons
-from kindle_dashboard.render.layout import COMPASS_POINTS, WIND_NAMES, compass, waste_day_label, wind_name
+from kindle_dashboard.render.layout import (
+    COMPASS_POINTS,
+    WIND_NAMES,
+    compass,
+    waste_day_label,
+    wind_name,
+    wrap_text,
+)
 from kindle_dashboard.render.panel import (
     _CALENDAR_ROW_PX,
     _TITLE_ROW_PX,
     _build_style,
     _clock_label,
+    _draw_events,
     _fit_inline,
     _icon_top,
     _inline_width,
@@ -671,3 +679,111 @@ def test_trains_block_is_anchored_to_the_bottom():
 
     band = image.crop((0, footer_top - style.px(60), 600, footer_top))
     assert band.getextrema()[0] == 0
+
+
+class _RecordingDraw:
+    """Finto ``ImageDraw``: registra le sole chiamate a `text`, che è tutto ciò che serve qui."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[float, float, str]] = []
+
+    def text(self, xy: tuple[float, float], text: str, **_kwargs: object) -> None:
+        self.calls.append((xy[0], xy[1], text))
+
+    def summaries(self, style) -> list[tuple[float, str]]:
+        """Testi disegnati a destra dell'ora, cioè le righe del titolo dell'evento."""
+        return [(y, text) for x, y, text in self.calls if x > style.margin]
+
+    def whens(self, style) -> list[str]:
+        """Le colonne dell'ora: una per evento disegnato (stanno tutte sul margine sinistro)."""
+        return [text for x, _, text in self.calls if x == style.margin]
+
+
+def _agenda_panel(summaries: list[str]) -> PanelData:
+    events = tuple(
+        CalEvent(start=datetime(2026, 10, 31, 18, 42, tzinfo=TZ), summary=text)
+        for text in summaries
+    )
+    return PanelData(
+        generated_at=NOW,
+        timezone="Europe/Rome",
+        events=events,
+        events_sync=Sync(updated_at=NOW),
+    )
+
+
+def test_wrap_text_keeps_a_short_summary_on_one_line():
+    font = fonts.load(20)
+
+    assert wrap_text("Ale incontro yoga", font, 1000) == ("Ale incontro yoga",)
+
+
+def test_wrap_text_splits_on_a_space_and_never_inside_a_word():
+    font = fonts.load(20)
+
+    lines = wrap_text("Visita casa xmare", font, font.getlength("Visita casa"))
+
+    assert lines == ("Visita casa", "xmare")
+
+
+def test_wrap_text_never_exceeds_the_requested_lines():
+    font = fonts.load(20)
+    long_summary = "Mamma e papà a pranzo fuori con gli amici e i parenti"
+
+    assert len(wrap_text(long_summary, font, 120, lines=1)) == 1
+    assert len(wrap_text(long_summary, font, 120, lines=2)) == 2
+    assert wrap_text(long_summary, font, 120, lines=1)[0].endswith("…")
+
+
+def test_agenda_wraps_a_long_summary_instead_of_cutting_it():
+    """Due righe quando lo spazio verticale c'è: nessuna parola persa e nessuna ellissi."""
+    style = _build_style((600, 800), "", "")
+    data = _agenda_panel(["Mamma e papà a pranzo fuori"])
+    draw = _RecordingDraw()
+    when_width = max(style.px(52), style.body_font.getlength("18:42") + style.px(10))
+    line_width = style.text_font.getlength("Mamma e papà a pranzo") + 1
+
+    _draw_events(
+        draw, style, data, 0, style.px(400), style.margin, style.margin + when_width + line_width
+    )
+
+    lines = [text for _, text in draw.summaries(style)]
+    assert len(lines) == 2
+    assert not any(line.endswith("…") for line in lines)
+    assert " ".join(lines) == "Mamma e papà a pranzo fuori"
+    # La seconda riga sta sotto la prima, con il passo dichiarato.
+    assert [y for y, _ in draw.summaries(style)] == [0, style.px(26)]
+
+
+def test_agenda_falls_back_to_one_line_when_the_second_would_not_fit():
+    """Se la seconda riga non ci sta si torna all'ellissi: meglio un testo corto che un evento perso."""
+    style = _build_style((600, 800), "", "")
+    data = _agenda_panel(["Mamma e papà a pranzo fuori con gli amici"])
+    draw = _RecordingDraw()
+
+    _draw_events(draw, style, data, 0, style.px(48), style.margin, style.margin + style.px(300))
+
+    lines = [text for _, text in draw.summaries(style)]
+    assert len(lines) == 1
+    assert lines[0].endswith("…")
+    assert draw.whens(style) == ["18:42"]
+
+
+def test_agenda_does_not_lose_events_to_make_room_for_a_second_line():
+    """Con tre eventi e lo spazio contato restano tutti: il testo lungo non ruba la riga altrui."""
+    style = _build_style((600, 800), "", "")
+    data = _agenda_panel(
+        [
+            "Visita casa xmamma e papà",
+            "Mamma e papà a pranzo fuori",
+            "Ale incontro yoga",
+        ]
+    )
+    draw = _RecordingDraw()
+    bottom = style.px(150)
+
+    _draw_events(draw, style, data, 0, bottom, style.margin, style.margin + style.px(300))
+
+    assert len(draw.whens(style)) == 3
+    # Nessuna riga esce dal blocco: la seconda riga non sfonda `bottom`.
+    assert max(y for _, y, _ in draw.calls) < bottom

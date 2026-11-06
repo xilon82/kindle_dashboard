@@ -16,10 +16,15 @@ RUN pip install --no-cache-dir --prefix=/install -e .
 # ---------- STAGE 2: runtime ----------
 FROM python:3.12-slim AS runtime
 
-# Solo librerie runtime necessarie a Pillow + tzdata, più un font vero: senza TTF Pillow usa il
+# Solo librerie runtime necessarie a Pillow + tzdata, più font veri: senza TTF Pillow usa il
 # font incorporato, che non ha le accentate né "×" e le disegna come quadrati nel pannello.
+# `fonts-liberation` è la scelta primaria perché ha la metrica di Arial, vicina al Segoe UI
+# Semibold usato in sviluppo: `DejaVuSans-Bold` è largo ~1,3 volte e con quello il pannello
+# troncava "REG 12519" e i nomi degli eventi (il renderer misura i font, quindi un font più largo
+# diventa ellissi). `fonts-dejavu-core` resta come riserva di copertura dei glifi.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libjpeg62-turbo zlib1g tzdata fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
+    libjpeg62-turbo zlib1g tzdata fonts-liberation fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
 
 # Utente non-root (sicurezza)
 RUN useradd --uid 1000 --create-home --shell /bin/bash appuser

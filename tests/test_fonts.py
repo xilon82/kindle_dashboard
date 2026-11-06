@@ -26,3 +26,19 @@ def test_font_directories_are_not_windows_only(monkeypatch):
     monkeypatch.setattr(fonts.sys, "platform", "linux")
 
     assert Path("/usr/share/fonts/truetype/dejavu") in fonts.font_directories()
+
+
+def test_a_compact_family_comes_before_the_wide_fallback():
+    """Su Linux deve vincere Liberation, non DejaVu.
+
+    Il pannello misura i font: un font più largo non toglie pixel a nessuno, diventa ellissi. Il
+    bold di DejaVu Sans è ~1,3x il Segoe UI Semibold di sviluppo e nel container tagliava
+    ``REG 12519`` a ``REG 12…``; quello di Liberation sta in 1,08x. Se qualcuno riordina i
+    candidati tornando a DejaVu, il pannello perde informazioni senza che nessun test sui pixel lo
+    noti: questo test tiene fermo l'ordine.
+    """
+    regular = fonts._REGULAR_CANDIDATES
+    bold = fonts._BOLD_CANDIDATES
+
+    assert regular.index("LiberationSans-Regular.ttf") < regular.index("DejaVuSans.ttf")
+    assert bold.index("LiberationSans-Bold.ttf") < bold.index("DejaVuSans-Bold.ttf")

@@ -111,8 +111,27 @@ Errori realmente accaduti qui, da non ripetere:
     su Linux ricadeva sul font incorporato di Pillow, che non ha le accentate: «Mamma e papà»
     diventava «Mamma e pap□a» (visto sullo screen del device). Ora la ricerca è multipiattaforma,
     `REQUIRED_GLYPHS`/`missing_glyphs()` verificano la copertura e il `Dockerfile` installa
-    `fonts-dejavu-core`. Quando introduci un carattere nuovo nel pannello, aggiungilo a
-    `REQUIRED_GLYPHS` e guarda il PNG: di un quadratino nessun test se ne accorge da solo.
+    `fonts-liberation` (e `fonts-dejavu-core` come riserva). Quando introduci un carattere nuovo nel
+    pannello, aggiungilo a `REQUIRED_GLYPHS` e guarda il PNG: di un quadratino nessun test se ne
+    accorge da solo.
+20. **Un font più largo non toglie pixel: diventa ellissi.** Con `fonts-dejavu-core` il container
+    disegnava il bold a ~1,30x il Segoe UI Semibold di sviluppo e tagliava `REG 12519` in `REG 12…`,
+    due eventi su tre e l'altezza dell'onda; l'anteprima sul PC era integra, quindi il difetto si
+    vedeva solo sul device. Due lezioni: (a) il font del container deve avere **metriche** vicine a
+    quello di sviluppo, non solo i glifi — `fonts-liberation` (metrica Arial) sta in 1,05-1,08x, e il
+    `Dockerfile` la installa; (b) in `load()` i candidati si scorrono **per nome e poi per cartella**:
+    con il ciclo cartella-major la prima cartella di `font_directories()` (`dejavu` su Debian)
+    vinceva su tutta la lista dei nomi. Prima di dire «il container è a posto» confronta il PNG del
+    container con `preview.png`, non solo il `pytest` verde.
+21. **Ricostruire l'immagine non aggiorna il container che sta servendo.** I font stanno
+    nell'immagine, non nel bind mount: dopo `docker build` un container creato prima continua a
+    disegnare col font vecchio e sembra che la modifica «non abbia effetto». Diagnosi in tre righe:
+    `docker ps --format '{{.Names}} {{.Image}}'`, il digest confrontato con `docker images`, e
+    `docker exec <nome> ls /usr/share/fonts/truetype` (se manca `liberation`, il container è vecchio).
+    Rimedio: `docker rm -f <nome>` e `docker compose up -d` — `up` da solo non tocca i container che
+    vengono da un progetto compose con un altro nome (`<hash>_nome`). Il codice invece *è* aggiornato
+    dal volume `./kindle_dashboard`, e questo rende l'inganno peggiore: metà delle modifiche si vede
+    e metà no.
 
 ## §Workflow
 

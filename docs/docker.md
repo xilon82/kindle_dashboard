@@ -101,17 +101,40 @@ Ciclo di vita: `up -d` crea o **ricrea** solo ciò che è cambiato ed è idempot
 il processo senza ricreare il container (il codice Python in memoria cambia solo così); `down`
 rimuove container e rete ma **non** l'immagine né `config.toml`/`cache/`, che stanno sull'host.
 
+Due cose che `up -d` **non** fa, e che fanno sembrare «la modifica non ha effetto»:
+
+- **non aggiorna il codice in memoria**: il volume monta `./kindle_dashboard`, quindi il file su disco
+  è nuovo ma il processo ha ancora il modulo vecchio — serve `restart` (o `up -d`, che ricrea);
+- **non tocca i container nati da un altro progetto compose**. Se `docker ps` mostra un nome tipo
+  `144aa401ba4d_kindle-dashboard` con `kindle-dashboard:local`, quel container viene da un progetto
+  con un nome diverso e compose non lo riconosce come suo: `up -d` ne crea un secondo e la porta
+  resta occupata dal primo. Rimedio: `docker rm -f <nome>` e poi `docker compose up -d`.
+
+I **font** stanno nell'immagine, non nel volume: dopo aver cambiato il `Dockerfile` serve ricreare il
+container (`docker build` da solo lascia in vita quello vecchio, che continua a disegnare col font
+precedente). Diagnosi: `docker ps --format '{{.Names}} {{.Image}}'` confrontato con
+`docker images`, e `docker exec <nome> ls /usr/share/fonts/truetype` — se manca `liberation`, il
+container è vecchio.
+
 ### Dockerfile: due stage
 
 | Stage | Base | Contenuto | A cosa serve |
 |---|---|---|---|
 | `builder` | `python:3.12-slim` | `gcc`, `libjpeg-dev`, `zlib1g-dev`, `pip install --prefix=/install -e .` | compilare le dipendenze |
-| `runtime` | `python:3.12-slim` | `libjpeg62-turbo`, `zlib1g`, `tzdata`, **`fonts-dejavu-core`**, i sorgenti in `/home/appuser`, `/install` | far girare il servizio |
+| `runtime` | `python:3.12-slim` | `libjpeg62-turbo`, `zlib1g`, `tzdata`, **`fonts-liberation`** + `fonts-dejavu-core`, i sorgenti in `/home/appuser`, `/install` | far girare il servizio |
 
 Tutto ciò che serve a *compilare* resta nel `builder` e non finisce nell'immagine finale: il
 risultato è molto più piccolo e ha meno superficie d'attacco. Nel runtime entrano solo le librerie
 necessarie a `pillow` e `tzdata`; `tzdata` è installato anche a livello di sistema perché `ZoneInfo`
 lo usa senza passare da Python.
+
+I due pacchetti di font non sono decorazione: le colonne del pannello si dimensionano con
+`font.getlength`, quindi il font decide **quanto testo entra** nel PNG. `fonts-liberation` è la
+scelta primaria perché ha la metrica di Arial (1,05-1,08x il Segoe UI Semibold di sviluppo), mentre
+`DejaVuSans-Bold` è largo ~1,30x e con quello il pannello perdeva `REG 12519`, l'altezza dell'onda e
+due eventi su tre. `fonts-dejavu-core` resta installato solo come riserva di copertura dei glifi: se
+un carattere nuovo del pannello mancasse a Liberation, `fonts.load()` ricade su DejaVu invece che sul
+font incorporato di Pillow (che stampa quadratini).
 
 L'`ENTRYPOINT` è `python -m kindle_dashboard` e il `CMD` è `serve`: il container parte già come
 server, dalla cartella di lavoro `/home/appuser` dove sono copiati i sorgenti. Per un comando

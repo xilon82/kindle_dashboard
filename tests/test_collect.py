@@ -28,6 +28,21 @@ def test_unconfigured_sections_explain_themselves(tmp_path):
     assert data.waste_sync.error == "differenziata non configurata"
 
 
+def test_collect_marks_the_night_band_like_the_server_does(tmp_path):
+    """L'anteprima di `render` deve mostrare `NOTTE` come il Kindle, non l'orologio.
+
+    La fascia viene da `schedule.is_night`, che è l'unico posto in cui la regola vive: prima il
+    calcolo stava solo in `server.py` e `python -m kindle_dashboard render` mostrava l'ora anche
+    alle 23:30, quindi l'anteprima non era confrontabile con il PNG servito.
+    """
+    config = Config(cache_dir=tmp_path)
+    evening = datetime(2026, 11, 6, 23, 30, tzinfo=zone("Europe/Rome"))
+    morning = datetime(2026, 11, 6, 12, 0, tzinfo=zone("Europe/Rome"))
+
+    assert collect(config, Cache(tmp_path), evening).night is True
+    assert collect(config, Cache(tmp_path), morning).night is False
+
+
 def test_weather_falls_back_to_cache_when_the_source_fails(tmp_path, monkeypatch, load_json):
     payload = load_json("weather_openmeteo.json")
     config = Config(
