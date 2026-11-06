@@ -119,15 +119,17 @@ Errori realmente accaduti qui, da non ripetere:
     tre e l'altezza dell'onda; l'anteprima sul PC era integra, quindi il difetto si vedeva solo sul
     device. Tre lezioni: (a) il font dell'anteprima deve essere **lo stesso** che il container
     installa, non uno che gli somiglia — «somiglia» lo decide la misura, non l'occhio, e il Segoe UI
-    Semibold è 89 px dove Liberation è 102 px sullo stesso testo: per questo `LiberationSans-*.ttf`
-    è il primo candidato su ogni piattaforma e `fonts-liberation` sta nel `Dockerfile`; (b) in
+    Semibold è 89 px dove Liberation è 102 px sullo stesso testo: per questo i due TTF stanno
+    **dentro il repo** (`kindle_dashboard/render/fonts/`) e `shipped_font()` è la prima scelta di
+    `load()`; il prezzo è che ora il font è un binario da mantenere, con `OFL.txt` accanto (SIL OFL
+    1.1: licenza obbligatoria, nessuna rinominata) e `*.ttf binary` in `.gitattributes`; (b) in
     `load()` i candidati si scorrono **per nome e poi per cartella**: con il ciclo cartella-major la
     prima cartella di `font_directories()` (`dejavu` su Debian) vinceva su tutta la lista dei nomi;
     (c) la diagnosi è una riga, e va fatta *prima* di incolpare il layout:
     `python -c "from kindle_dashboard.render import fonts; print(fonts.load(19).path, fonts.load(19, bold=True).path)"`
-    deve stampare `LiberationSans-*` anche sul PC (Liberation non è un font di serie di Windows: se
-    manca, si installa o si indica il `.ttf` in `[render] font`/`font_bold`). Prima di dire «il
-    container è a posto» confronta il PNG del container con `preview.png`, non solo il `pytest` verde.
+    deve stampare il percorso dentro il repo; se stampa `C:\WINDOWS\Fonts\…` mancano i dati del
+    pacchetto (o c'è un override attivo in `[render] font`/`font_bold`). Prima di dire «il container è
+    a posto» confronta il PNG del container con `preview.png`, non solo il `pytest` verde.
 21. **Ricostruire l'immagine non aggiorna il container che sta servendo.** I font stanno
     nell'immagine, non nel bind mount: dopo `docker build` un container creato prima continua a
     disegnare col font vecchio e sembra che la modifica «non abbia effetto». Diagnosi in tre righe:

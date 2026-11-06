@@ -16,13 +16,11 @@ RUN pip install --no-cache-dir --prefix=/install -e .
 # ---------- STAGE 2: runtime ----------
 FROM python:3.12-slim AS runtime
 
-# Solo librerie runtime necessarie a Pillow + tzdata, più font veri: senza TTF Pillow usa il
-# font incorporato, che non ha le accentate né "×" e le disegna come quadrati nel pannello.
-# `fonts-liberation` è il font del pannello, non un ripiego: `fonts.py` lo mette come primo
-# candidato **anche su Windows**, così l'anteprima sul PC misura gli stessi pixel del device (un
-# font più stretto, come il Segoe UI Semibold, non regala spazio: nasconde il troncamento).
-# `DejaVuSans-Bold` è largo ~1,3 volte e con quello il pannello troncava "REG 12519" e i nomi degli
-# eventi; `fonts-dejavu-core` resta come riserva di copertura dei glifi.
+# Solo librerie runtime necessarie a Pillow + tzdata, più font di sistema. Il pannello **spedisce**
+# Liberation Sans in `kindle_dashboard/render/fonts/` (SIL OFL 1.1, licenza accanto ai binari), così
+# anteprima sul PC e container disegnano lo stesso file; `fonts-liberation` e `fonts-dejavu-core`
+# restano come ripiego e come riserva di copertura. Senza nessun TTF Pillow userebbe il font
+# incorporato, che non ha le accentate né "×" e le disegna come quadrati.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg62-turbo zlib1g tzdata fonts-liberation fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*

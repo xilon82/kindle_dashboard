@@ -20,6 +20,11 @@ kindle-dashboard = "kindle_dashboard.__main__:main"
 [tool.setuptools.packages.find]
 include = ["kindle_dashboard*"]
 
+# Liberation Sans viaggia con il pannello: il renderer misura i testi con `font.getlength`, quindi
+# anteprima e device devono usare lo stesso file (licenza SIL OFL 1.1 accanto, in `fonts/OFL.txt`).
+[tool.setuptools.package-data]
+"kindle_dashboard.render" = ["fonts/*.ttf", "fonts/OFL.txt"]
+
 [tool.ruff]
 line-length = 110
 target-version = "py311"

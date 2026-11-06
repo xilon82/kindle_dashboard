@@ -344,7 +344,7 @@ regular ~1,17x). Misurando i candidati Debian sullo stesso testo:
 
 Liberation Sans vince perché è la più stretta e mantiene il peso del tratto (6,9% di inchiostro, come
 DejaVu: nessuna regressione di leggibilità rispetto a prima). Il `Dockerfile` installa
-`fonts-liberation` come primario e `fonts-dejavu-core` come riserva di copertura.
+`fonts-liberation` e `fonts-dejavu-core` come riserve di sistema.
 
 **Il terzo bug è quello che ha cambiato la diagnosi**: il PNG del container tornava sovrapponibile
 all'anteprima solo finché il PC usava lo stesso font, e non lo faceva. Con Liberation in fondo alla
@@ -353,13 +353,19 @@ stesso `REG 12519` misura 89 px in Segoe e 102 px in Liberation, `SAB 18°/12°`
 `poco mosso 0.8m` 151 px contro 164 (numeri misurati a 19 px, uguali su Windows e nel container, che è
 il punto). L'anteprima era quindi **ottimistica**: mostrava righe integre dove il Kindle avrebbe
 troncato, e ogni volta che una riga stava «appena al bordo» la sorpresa arrivava sul device. La
-correzione non è allargare le colonne: è mettere Liberation come **primo candidato anche su
-Windows**, così il PC misura gli stessi pixel del container. Segue una regola utile anche fuori da
-questo progetto: «vicino» lo decide la misura, non l'occhio. `tests/test_fonts.py` blocca il ritorno
-dell'ordine vecchio (`LiberationSans-*` in testa) e la diagnosi è una riga:
-`python -c "from kindle_dashboard.render import fonts; print(fonts.load(19).path)"` deve stampare
-`LiberationSans-…` anche sul PC. Liberation non è un font di serie di Windows: dove manca si installa,
-oppure si indica un `.ttf` in `[render] font`/`font_bold`.
+correzione non è allargare le colonne: è far **misurare al PC lo stesso file** del device. Da qui la
+decisione di **spedire il font con il pannello**: `kindle_dashboard/render/fonts/` contiene
+`LiberationSans-Regular.ttf`, `LiberationSans-Bold.ttf` e `OFL.txt` (SIL OFL 1.1, obbligatoria accanto
+ai binari), `shipped_font()` è la prima scelta di `load()`, `[tool.setuptools.package-data]` la porta
+nel pacchetto e `*.ttf binary` in `.gitattributes` evita che git normalizzi un binario. I due file
+sono quelli di Debian `fonts-liberation`, cioè esattamente ciò che il device disegnava già: il Kindle
+non cambia, il PC si allinea. Segue una regola utile anche fuori da questo progetto: «vicino» lo
+decide la misura, non l'occhio. `tests/test_fonts.py` tiene fermi l'esistenza del file, la licenza
+accanto, il fatto che `load()` usi quello e l'ordine dei ripieghi; la diagnosi è una riga:
+`python -c "from kindle_dashboard.render import fonts; print(fonts.load(19).path)"` deve stampare un
+percorso dentro il repo, non `C:\WINDOWS\Fonts\…`. Aggiornare il font (o cambiarlo con uno più largo)
+significa rifare **tutte** le misure: si rigenera `preview.png` e si guarda, non si torna a tarare a
+occhio.
 
 Restano due troncamenti che sono **del layout**, non del font: gli eventi oltre ~26 caratteri nella
 colonna da 60% e le fermate che eccedono la riga dei treni. Quelli vanno affrontati con le regole di

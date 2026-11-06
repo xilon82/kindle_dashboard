@@ -28,17 +28,37 @@ def test_font_directories_are_not_windows_only(monkeypatch):
     assert Path("/usr/share/fonts/truetype/dejavu") in fonts.font_directories()
 
 
-def test_the_container_font_comes_first_on_every_platform():
-    """Il primo candidato deve essere il font che il container installa.
+def test_the_panel_ships_its_font():
+    """Il TTF viaggia con il pacchetto: senza, anteprima e device ricadono su due font di sistema diversi."""
+    regular = fonts.shipped_font()
+    bold = fonts.shipped_font(bold=True)
 
-    L'anteprima sul PC vale solo se misura lo stesso font del device: le colonne usano
-    `font.getlength`, quindi con Segoe UI Semibold davanti (più stretto di ~1,09-1,15x) il PC
-    mostrava righe integre che sul Kindle finivano in ellissi. Se qualcuno rimette i font di Windows
-    in testa, l'anteprima torna a mentire e nessun test sui pixel lo nota: questo test tiene fermo
-    l'accordo fra `fonts.py` e il `Dockerfile`.
+    assert regular.is_file()
+    assert bold.is_file()
+    # Un file troncato si aprirebbe lo stesso: sotto i 100 KB non è un TTF completo.
+    assert regular.stat().st_size > 100_000
+    assert bold.stat().st_size > 100_000
+
+
+def test_the_license_ships_next_to_the_font():
+    """SIL OFL 1.1 richiede la licenza insieme ai binari: senza, il font non si può ridistribuire."""
+    assert (fonts.shipped_font().parent / "OFL.txt").is_file()
+
+
+def test_the_loaded_font_is_the_shipped_one():
+    """`load()` deve prendere il TTF del repo, non quello installato nel sistema."""
+    assert Path(fonts.load(23).path).resolve() == fonts.shipped_font().resolve()
+    assert Path(fonts.load(23, bold=True).path).resolve() == fonts.shipped_font(bold=True).resolve()
+
+
+def test_the_container_font_is_both_shipped_and_the_first_candidate():
+    """Il TTF incluso ha lo stesso nome del primo candidato di sistema.
+
+    Così, se il file spedito mancasse (installazione senza package data), il ripiego prenderebbe
+    comunque lo stesso font quando è installato nel sistema: il nome è la cerniera fra le due strade.
     """
-    assert fonts._REGULAR_CANDIDATES[0] == "LiberationSans-Regular.ttf"
-    assert fonts._BOLD_CANDIDATES[0] == "LiberationSans-Bold.ttf"
+    assert fonts.shipped_font().name == fonts._REGULAR_CANDIDATES[0]
+    assert fonts.shipped_font(bold=True).name == fonts._BOLD_CANDIDATES[0]
 
 
 def test_a_compact_family_comes_before_the_wide_fallback():

@@ -3,3 +3,6 @@
 * text=auto
 *.sh text eol=lf
 *.sh.template text eol=lf
+
+# I TTF sono binari: niente normalizzazione dei fine riga e niente diff testuale su un font.
+*.ttf binary

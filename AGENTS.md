@@ -76,29 +76,28 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    titolo con `· agg. HH:MM` non ci starebbe: l'icona è decorazione e cede **prima del testo**, che
    porta l'informazione. I glifi di sezione (`calendar`, `waste`, `train`) seguono la geometria di
    Bootstrap Icons (MIT) tradotta in primitive — corpo pieno e ritagli bianchi, nessun asset esterno.
-12. **I font si cercano su ogni piattaforma, devono coprire i caratteri del pannello e il primo
-   candidato è quello che il container installa**: `fonts.font_directories()` guarda Windows
-   (`%WINDIR%\Fonts`), macOS e Linux (`/usr/share/fonts/truetype/{dejavu,liberation,noto}`, più
-   `/usr/share/fonts/TTF` e `/usr/local/share/fonts`); `REQUIRED_GLYPHS` (`°·…×àèéìòù`) è il minimo
-   che il font scelto deve avere e `missing_glyphs()` lo verifica confrontando il bounding box di
-   ogni carattere con quello di U+E000, che Pillow disegna sempre uguale. Senza questi controlli il
-   container ricadeva sul font incorporato e stampava quadrati al posto delle accentate (bug visto sul
-   device).
-   La copertura non basta: le colonne si dimensionano con `font.getlength`, quindi un font più largo
-   non «ruba» pixel, **diventa ellissi**. Nel container il bold di DejaVu Sans è ~1,30x il Segoe UI
-   Semibold (regular ~1,17x) e tagliava `REG 12519` in `REG 12…`, `SAB 18°/12°` in `SAB 18°/…` e
-   `poco mosso 0.8m` in `poco mosso`; Liberation Sans, che ha la metrica di Arial, sta in 1,09-1,15x.
-   Per questo il `Dockerfile` installa `fonts-liberation` (primario) e `fonts-dejavu-core` (riserva di
-   copertura), e per questo `_REGULAR_CANDIDATES`/`_BOLD_CANDIDATES` mettono **Liberation Sans in
-   testa anche sull'host di sviluppo**: la scelta non è «un font vicino a quello del device» ma
-   «lo stesso font», perché un font più stretto del vero (prima era il Segoe UI Semibold, 89 px contro
-   i 102 px di `REG 12519`) non lascia spazio in più: nasconde un troncamento che il Kindle mostra.
-   Le voci Windows restano come fallback per le installazioni senza Liberation, che non è un font di
-   serie; `tests/test_fonts.py` tiene fermo che il primo nome sia quello del `Dockerfile`. In `load()`
-   i candidati sono ordinati **per nome e poi per cartella**: con il ciclo cartella-major la prima
-   cartella di `font_directories()` (`dejavu` su Debian) vinceva su tutto e la lista dei nomi non
-   contava nulla. Cambiare font cambia tutte le misure, quindi le regole di cedimento non vanno
-   allentate «perché tanto il font è quello».
+12. **Il font del pannello viaggia con il pannello**: `kindle_dashboard/render/fonts/` contiene
+   `LiberationSans-Regular.ttf` e `LiberationSans-Bold.ttf` (i TTF di Debian `fonts-liberation`, che il
+   container usa da sempre) più `OFL.txt`, la licenza **SIL OFL 1.1** che va ridistribuita accanto ai
+   binari: il font non si rinomina e non si vende da solo. `fonts.shipped_font()` è la prima scelta di
+   `load()`, `[tool.setuptools.package-data]` la porta nel pacchetto e `.ttf binary` in `.gitattributes`
+   impedisce a git di normalizzare un binario. Il motivo è la misura, non l'estetica: le colonne si
+   dimensionano con `font.getlength`, quindi anteprima e device devono usare **lo stesso file**. Con
+   Liberation solo di sistema il PC sceglieva il Segoe UI Semibold — 89 px su `REG 12519` contro 102 px
+   — e l'anteprima mostrava righe integre che il Kindle troncava; con un font più largo (DejaVu Sans
+   Bold, ~1,30x) succedeva l'opposto, `REG 12…` e `SAB 18°/…` nel container.
+   I ripieghi restano, in quest'ordine: override `[render] font`/`font_bold`, TTF incluso, ricerca di
+   sistema (`font_directories()` su Windows `%WINDIR%\Fonts`, macOS, Linux
+   `/usr/share/fonts/truetype/{dejavu,liberation,noto}` più `/usr/share/fonts/TTF` e
+   `/usr/local/share/fonts`). Nella ricerca l'ordine è **per nome e poi per cartella** (con il ciclo
+   cartella-major la prima cartella di `font_directories()`, `dejavu` su Debian, vinceva su tutto), e
+   il primo nome è `LiberationSans-*`, lo stesso del file spedito: se i dati del pacchetto mancassero,
+   il ripiego prenderebbe lo stesso font. `REQUIRED_GLYPHS` (`°·…×àèéìòù`) è il minimo che il font
+   deve coprire e `missing_glyphs()` lo verifica confrontando il bounding box di ogni carattere con
+   quello di U+E000, che Pillow disegna sempre uguale (senza questo controllo un container senza TTF
+   stampava quadrati al posto delle accentate). `tests/test_fonts.py` tiene fermi l'esistenza e la
+   licenza del file spedito, che `load()` usi quello e l'ordine dei ripieghi. Cambiare font cambia tutte
+   le misure, quindi le regole di cedimento non vanno allentate «perché tanto il font è quello».
 
 ### Configurazione
 

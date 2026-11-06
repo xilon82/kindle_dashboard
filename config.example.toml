@@ -57,10 +57,10 @@ stop_details = false
 stop_priority = []
 
 [render]
-# Percorsi TTF opzionali. Vuoto = Liberation Sans, **lo stesso font che il `Dockerfile` installa nel
-# container**: l'anteprima sul PC deve misurare gli stessi pixel del Kindle, altrimenti mostra righe
-# integre che sul device finiscono in «…». Ripieghi in ordine: Segoe UI Semibold, Verdana, Arial,
-# Tahoma, DejaVu Sans, Noto Sans.
+# Percorsi TTF opzionali. Vuoto = Liberation Sans, che viaggia nel pacchetto
+# (`kindle_dashboard/render/fonts/`, SIL OFL 1.1): è lo stesso file che il container disegna, quindi
+# l'anteprima sul PC misura gli stessi pixel del Kindle. Indica un `.ttf` qui solo per provare un
+# font diverso: cambiano tutte le misure e vanno ricontrollate a mano.
 font = ""
 font_bold = ""
 
