@@ -313,12 +313,13 @@ sistema, accetta un override da configurazione (`[render] font`/`font_bold`) e *
 
 La ricerca è **multipiattaforma**: `%WINDIR%\Fonts` su Windows, `/System/Library/Fonts` e
 `/Library/Fonts` su macOS, `/usr/share/fonts/truetype/{dejavu,liberation,noto}` (più
-`/usr/share/fonts/TTF` e `/usr/local/share/fonts`) su Linux. L'ordine dei nomi parte dai semibold di
-Windows e prosegue con **Liberation prima di DejaVu** e poi Noto, cioè dal font più stretto al più
-largo fra quelli che un container Debian installa davvero. L'ordine dei nomi conta più di quello
-delle cartelle: `load()` scorre `name` esterno e `directory` interno, perché iterando prima le
-cartelle vinceva `dejavu/` (che su Debian precede `liberation/`) e la lista dei nomi diventava
-decorativa.
+`/usr/share/fonts/TTF` e `/usr/local/share/fonts`) su Linux. Il primo nome di entrambe le liste è
+**Liberation Sans**, cioè il font che il `Dockerfile` installa nel container; dopo vengono i Segoe UI
+di Windows, Verdana, Arial, Tahoma e infine DejaVu e Noto come riserva di copertura. Il criterio non è
+«il font più bello» né «il primo che il sistema offre»: è **lo stesso font del device**, perché è
+quello che il renderer misura. L'ordine dei nomi conta più di quello delle cartelle: `load()` scorre
+`name` esterno e `directory` interno, perché iterando prima le cartelle vinceva `dejavu/` (che su
+Debian precede `liberation/`) e la lista dei nomi diventava decorativa.
 
 **Il bug che ha imposto questa ricerca**: guardando solo la cartella di Windows, il container
 ricadeva su `ImageFont.load_default(size)`, il font incorporato di Pillow, che non ha le accentate
@@ -328,31 +329,51 @@ inesistente (U+E000, che Pillow disegna sempre identico) e `load()` preferisce i
 copre `REQUIRED_GLYPHS` (`°·…×àèéìòù`). `tests/test_fonts.py` impedisce il ritorno del difetto.
 
 **Il secondo bug, meno visibile e più insidioso**: la copertura dei glifi non basta. Le colonne si
-dimensionano con `font.getlength`, quindi un font più largo del Segoe UI Semibold di sviluppo non
-«ruba» pixel: supera il budget e il testo diventa ellissi. Con `fonts-dejavu-core` il PNG del
-container mostrava `04:37 REG 12…`, `SAB 18°/…`, `Ale incontro y…` e `poco mosso` senza altezza
-d'onda, mentre l'anteprima sullo stesso `PanelData` era integra: DejaVu Sans Bold è ~1,30x il
-Segoe UI Semibold (il regular ~1,17x). Misurando i candidati Debian sullo stesso testo:
+dimensionano con `font.getlength`, quindi un font più largo di quello vero non «ruba» pixel: supera il
+budget e il testo diventa ellissi. Con `fonts-dejavu-core` il PNG del container mostrava
+`04:37 REG 12…`, `SAB 18°/…`, `Ale incontro y…` e `poco mosso` senza altezza d'onda, mentre
+l'anteprima sullo stesso `PanelData` era integra: DejaVu Sans Bold è ~1,30x il Segoe UI Semibold (il
+regular ~1,17x). Misurando i candidati Debian sullo stesso testo:
 
 | Font | larghezza vs Segoe UI Semibold (regular / bold) | inchiostro a 22 px |
 |---|---|---|
-| `fonts-liberation` | 1,05x / 1,08x | 6,9% / 9,2% |
+| `fonts-liberation` | 1,05x / 1,15x | 6,9% / 9,2% |
 | `fonts-open-sans` | 1,07x / 1,13x | 7,9% / 9,7% |
 | `fonts-dejavu-core` | 1,17x / 1,30x | 6,9% / 9,5% |
 | DejaVu Sans **Condensed** (`fonts-dejavu-extra`) | 1,05x / 1,16x | 6,6% / — |
 
 Liberation Sans vince perché è la più stretta e mantiene il peso del tratto (6,9% di inchiostro, come
 DejaVu: nessuna regressione di leggibilità rispetto a prima). Il `Dockerfile` installa
-`fonts-liberation` come primario e `fonts-dejavu-core` come riserva di copertura; il PNG del container
-torna sovrapponibile all'anteprima sul PC, con l'unico troncamento che c'è anche in sviluppo (eventi
-oltre ~26 caratteri nella colonna da 60%).
+`fonts-liberation` come primario e `fonts-dejavu-core` come riserva di copertura.
+
+**Il terzo bug è quello che ha cambiato la diagnosi**: il PNG del container tornava sovrapponibile
+all'anteprima solo finché il PC usava lo stesso font, e non lo faceva. Con Liberation in fondo alla
+lista dei nomi, l'host di sviluppo sceglieva il Segoe UI Semibold, più stretto di ~1,09-1,15x: lo
+stesso `REG 12519` misura 89 px in Segoe e 102 px in Liberation, `SAB 18°/12°` 99 px contro 111,
+`poco mosso 0.8m` 151 px contro 164 (numeri misurati a 19 px, uguali su Windows e nel container, che è
+il punto). L'anteprima era quindi **ottimistica**: mostrava righe integre dove il Kindle avrebbe
+troncato, e ogni volta che una riga stava «appena al bordo» la sorpresa arrivava sul device. La
+correzione non è allargare le colonne: è mettere Liberation come **primo candidato anche su
+Windows**, così il PC misura gli stessi pixel del container. Segue una regola utile anche fuori da
+questo progetto: «vicino» lo decide la misura, non l'occhio. `tests/test_fonts.py` blocca il ritorno
+dell'ordine vecchio (`LiberationSans-*` in testa) e la diagnosi è una riga:
+`python -c "from kindle_dashboard.render import fonts; print(fonts.load(19).path)"` deve stampare
+`LiberationSans-…` anche sul PC. Liberation non è un font di serie di Windows: dove manca si installa,
+oppure si indica un `.ttf` in `[render] font`/`font_bold`.
+
+Restano due troncamenti che sono **del layout**, non del font: gli eventi oltre ~26 caratteri nella
+colonna da 60% e le fermate che eccedono la riga dei treni. Quelli vanno affrontati con le regole di
+cedimento, non cambiando font.
 
 Attenzione alle conseguenze sui layout: con un font diverso cambiano **tutte** le misure, quindi le
 regole di cedimento (icona del titolo, riga dei dettagli, colonne dei treni) vanno tenute: sono l'unico
 modo perché il pannello resti leggibile anche quando il font non è quello su cui è tarato.
 
-Scelta controintuitiva ma voluta: anche il "regular" è **semibold**. Su e-ink un tratto di 1 px
-sparisce o sfarfalla; in semibold il testo resta nero e leggibile.
+Scelta da conoscere: nei **ripieghi Windows** anche il "regular" è il semibold (`seguisb.ttf`), perché
+su e-ink un tratto di 1 px sparisce o sfarfalla. Il font primario è invece `LiberationSans-Regular`,
+che ha il 6,9% di inchiostro misurato: più sottile del semibold ma non al punto da scomparire, ed è
+ciò che il device mostra. Se una sera il testo piccolo sul Kindle sembrasse troppo chiaro, il
+discorso è di peso del font, non di layout.
 
 ### 5.3 Testo che ci sta: `fit_text` e `getlength`
 

@@ -28,14 +28,27 @@ def test_font_directories_are_not_windows_only(monkeypatch):
     assert Path("/usr/share/fonts/truetype/dejavu") in fonts.font_directories()
 
 
+def test_the_container_font_comes_first_on_every_platform():
+    """Il primo candidato deve essere il font che il container installa.
+
+    L'anteprima sul PC vale solo se misura lo stesso font del device: le colonne usano
+    `font.getlength`, quindi con Segoe UI Semibold davanti (più stretto di ~1,09-1,15x) il PC
+    mostrava righe integre che sul Kindle finivano in ellissi. Se qualcuno rimette i font di Windows
+    in testa, l'anteprima torna a mentire e nessun test sui pixel lo nota: questo test tiene fermo
+    l'accordo fra `fonts.py` e il `Dockerfile`.
+    """
+    assert fonts._REGULAR_CANDIDATES[0] == "LiberationSans-Regular.ttf"
+    assert fonts._BOLD_CANDIDATES[0] == "LiberationSans-Bold.ttf"
+
+
 def test_a_compact_family_comes_before_the_wide_fallback():
-    """Su Linux deve vincere Liberation, non DejaVu.
+    """Liberation deve restare davanti a DejaVu.
 
     Il pannello misura i font: un font più largo non toglie pixel a nessuno, diventa ellissi. Il
-    bold di DejaVu Sans è ~1,3x il Segoe UI Semibold di sviluppo e nel container tagliava
-    ``REG 12519`` a ``REG 12…``; quello di Liberation sta in 1,08x. Se qualcuno riordina i
-    candidati tornando a DejaVu, il pannello perde informazioni senza che nessun test sui pixel lo
-    noti: questo test tiene fermo l'ordine.
+    bold di DejaVu Sans è ~1,30x il Segoe UI Semibold e nel container tagliava ``REG 12519`` a
+    ``REG 12…``; quello di Liberation sta in 1,15x. Se qualcuno riordina i candidati tornando a
+    DejaVu, il pannello perde informazioni senza che nessun test sui pixel lo noti: questo test
+    tiene fermo l'ordine.
     """
     regular = fonts._REGULAR_CANDIDATES
     bold = fonts._BOLD_CANDIDATES

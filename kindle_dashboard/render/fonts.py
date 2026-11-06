@@ -1,13 +1,16 @@
 """Ricerca dei font TTF: font di sistema con override da configurazione.
 
-Su e-ink i tratti sottili spariscono, quindi anche il "regular" usa pesi semibold quando ci sono.
+Su e-ink i tratti sottili spariscono, quindi fra i ripieghi Windows il "regular" usa il peso semibold
+(`seguisb.ttf`); il font primario è invece Liberation Sans Regular, che ha un inchiostro misurato del
+6,9% e per questo regge anche senza semibold.
 
 La ricerca è **multipiattaforma**: limitarla a `%WINDIR%\\Fonts` faceva ricadere il container Linux
 sul font incorporato di Pillow, che non ha le accentate né il segno di moltiplicazione: sul PNG
 comparivano dei quadratini. La scelta non è però solo di copertura: le colonne del pannello si
-dimensionano con `font.getlength`, quindi un font più largo di quello di sviluppo si traduce in
-testo troncato. Per questo i candidati di Linux sono ordinati dal più stretto (Liberation, metrica
-Arial) al più largo (DejaVu), non nell'ordine in cui i pacchetti li installano.
+dimensionano con `font.getlength`, quindi il font dell'anteprima deve essere **lo stesso** che il
+device mostra. Per questo il primo candidato su ogni piattaforma è Liberation Sans, quello che il
+`Dockerfile` installa: un font più stretto non regala spazio, si limita a nascondere il troncamento
+che il Kindle mostrerà.
 """
 
 from __future__ import annotations
@@ -21,29 +24,30 @@ from PIL import ImageFont
 
 Font = ImageFont.FreeTypeFont | ImageFont.ImageFont
 
-# Prima i pesi semibold (su e-ink il tratto sottile sparisce), poi i bold. Dopo i font di Windows
-# vengono i due che su Linux si trovano davvero, **Liberation prima di DejaVu**: il renderer misura
-# le larghezze con `getlength`, quindi un font più largo non «ruba» pixel, diventa ellissi. A parità
-# di testo DejaVu Sans Bold è ~1,30x il Segoe UI Semibold di sviluppo (e 1,17x il regular) e nel
-# container troncava "REG 12519" e i nomi degli eventi; Liberation, che ha la metrica di Arial, sta
-# in 1,05-1,08x e il pannello torna uguale all'anteprima sul PC.
+# Il primo nome è il font che il `Dockerfile` installa — Liberation Sans. Sviluppo e container devono
+# **misurare** lo stesso testo, non solo somigliarsi: prima l'ordine partiva dal Segoe UI Semibold di
+# Windows, più stretto di ~1,09-1,15x, e l'anteprima era ottimistica rispetto al device. Lo stesso
+# `REG 12519` misura 89 px in Segoe UI Semibold e 102 px in Liberation: una riga che in anteprima
+# stava appena dentro sul Kindle diventava ellissi, difetto che il PC non mostrava. Segoe resta come
+# seconda voce (è il peso semibold: su e-ink il tratto sottile sparisce), poi Verdana, Arial, Tahoma e
+# infine i font Linux più larghi (DejaVu, Noto) come riserva di copertura dei glifi.
 _REGULAR_CANDIDATES = (
+    "LiberationSans-Regular.ttf",
     "seguisb.ttf",
     "verdana.ttf",
     "segoeui.ttf",
     "arial.ttf",
     "tahoma.ttf",
-    "LiberationSans-Regular.ttf",
     "DejaVuSans.ttf",
     "NotoSans-Regular.ttf",
 )
 _BOLD_CANDIDATES = (
+    "LiberationSans-Bold.ttf",
     "seguisb.ttf",
     "segoeuib.ttf",
     "verdanab.ttf",
     "arialbd.ttf",
     "tahomabd.ttf",
-    "LiberationSans-Bold.ttf",
     "DejaVuSans-Bold.ttf",
     "NotoSans-Bold.ttf",
 )
@@ -81,6 +85,10 @@ def missing_glyphs(font: Font, text: str) -> str:
 @cache
 def load(size: int, *, bold: bool = False, override: str = "") -> Font:
     """Carica il miglior font disponibile alla dimensione richiesta, senza mai fallire.
+
+    Il primo candidato è il font che il container installa, così anteprima e device misurano lo
+    stesso testo; le voci successive sono fallback per le piattaforme dove non è presente (un
+    Windows appena installato non ha Liberation Sans).
 
     Fra i candidati si preferisce il primo che copre `REQUIRED_GLYPHS`: uno che li copre solo in
     parte disegnerebbe dei quadrati al posto delle accentate.

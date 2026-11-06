@@ -76,8 +76,8 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    titolo con `· agg. HH:MM` non ci starebbe: l'icona è decorazione e cede **prima del testo**, che
    porta l'informazione. I glifi di sezione (`calendar`, `waste`, `train`) seguono la geometria di
    Bootstrap Icons (MIT) tradotta in primitive — corpo pieno e ritagli bianchi, nessun asset esterno.
-12. **I font si cercano su ogni piattaforma, devono coprire i caratteri del pannello e devono avere
-   metriche vicine a quelle di sviluppo**: `fonts.font_directories()` guarda Windows
+12. **I font si cercano su ogni piattaforma, devono coprire i caratteri del pannello e il primo
+   candidato è quello che il container installa**: `fonts.font_directories()` guarda Windows
    (`%WINDIR%\Fonts`), macOS e Linux (`/usr/share/fonts/truetype/{dejavu,liberation,noto}`, più
    `/usr/share/fonts/TTF` e `/usr/local/share/fonts`); `REQUIRED_GLYPHS` (`°·…×àèéìòù`) è il minimo
    che il font scelto deve avere e `missing_glyphs()` lo verifica confrontando il bounding box di
@@ -85,15 +85,20 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    container ricadeva sul font incorporato e stampava quadrati al posto delle accentate (bug visto sul
    device).
    La copertura non basta: le colonne si dimensionano con `font.getlength`, quindi un font più largo
-   del Segoe UI Semibold di sviluppo non «ruba» pixel, **diventa ellissi**. Nel container il bold di
-   DejaVu Sans è ~1,30x (regular ~1,17x) e tagliava `REG 12519` in `REG 12…`, `SAB 18°/12°` in
-   `SAB 18°/…` e `poco mosso 0.8m` in `poco mosso`; Liberation Sans, che ha la metrica di Arial, sta
-   in 1,05-1,08x e rende il PNG del container uguale all'anteprima sul PC. Per questo il `Dockerfile`
-   installa `fonts-liberation` (primario) e `fonts-dejavu-core` (riserva di copertura), e per questo
-   in `load()` i candidati sono ordinati **per nome e poi per cartella**: con il ciclo
-   cartella-major la prima cartella di `font_directories()` (`dejavu` su Debian) vinceva su tutto e
-   la lista dei nomi non contava nulla. Cambiare font cambia tutte le misure, quindi le regole di
-   cedimento non vanno allentate «perché tanto il font è quello».
+   non «ruba» pixel, **diventa ellissi**. Nel container il bold di DejaVu Sans è ~1,30x il Segoe UI
+   Semibold (regular ~1,17x) e tagliava `REG 12519` in `REG 12…`, `SAB 18°/12°` in `SAB 18°/…` e
+   `poco mosso 0.8m` in `poco mosso`; Liberation Sans, che ha la metrica di Arial, sta in 1,09-1,15x.
+   Per questo il `Dockerfile` installa `fonts-liberation` (primario) e `fonts-dejavu-core` (riserva di
+   copertura), e per questo `_REGULAR_CANDIDATES`/`_BOLD_CANDIDATES` mettono **Liberation Sans in
+   testa anche sull'host di sviluppo**: la scelta non è «un font vicino a quello del device» ma
+   «lo stesso font», perché un font più stretto del vero (prima era il Segoe UI Semibold, 89 px contro
+   i 102 px di `REG 12519`) non lascia spazio in più: nasconde un troncamento che il Kindle mostra.
+   Le voci Windows restano come fallback per le installazioni senza Liberation, che non è un font di
+   serie; `tests/test_fonts.py` tiene fermo che il primo nome sia quello del `Dockerfile`. In `load()`
+   i candidati sono ordinati **per nome e poi per cartella**: con il ciclo cartella-major la prima
+   cartella di `font_directories()` (`dejavu` su Debian) vinceva su tutto e la lista dei nomi non
+   contava nulla. Cambiare font cambia tutte le misure, quindi le regole di cedimento non vanno
+   allentate «perché tanto il font è quello».
 
 ### Configurazione
 

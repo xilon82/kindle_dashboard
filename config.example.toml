@@ -57,8 +57,10 @@ stop_details = false
 stop_priority = []
 
 [render]
-# Percorsi TTF opzionali. Vuoto = il primo font disponibile di sistema
-# (Segoe UI Semibold / Segoe UI / Arial Bold / Verdana Bold).
+# Percorsi TTF opzionali. Vuoto = Liberation Sans, **lo stesso font che il `Dockerfile` installa nel
+# container**: l'anteprima sul PC deve misurare gli stessi pixel del Kindle, altrimenti mostra righe
+# integre che sul device finiscono in «…». Ripieghi in ordine: Segoe UI Semibold, Verdana, Arial,
+# Tahoma, DejaVu Sans, Noto Sans.
 font = ""
 font_bold = ""
 
