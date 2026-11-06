@@ -61,7 +61,9 @@ config.toml
 collect() ──► PanelData ──► render_panel() ──► PNG ──► HTTP ──► browser del Kindle
     │
     ├── sources/weather.fetch_payload() → parse()
+    ├── sources/marine.fetch_payload() → parse()
     ├── sources/calendar.fetch_payload() → parse_events()
+    ├── sources/waste.fetch_payload() → parse()
     └── sources/trains.fetch_payload() → parse() → fetch_trip_stops()
                     │
                     └── Cache (ultimo payload buono, su disco)
@@ -71,7 +73,7 @@ collect() ──► PanelData ──► render_panel() ──► PNG ──► H
 |---|---|---|
 | `config.py` | leggere e validare il TOML, risolvere i percorsi | chiamare la rete |
 | `schedule.py` | fascia giorno/notte e intervallo di ricarica (con clamp) | leggere config, disegnare |
-| `collect.py` | orchestra le tre sezioni, gestisce la cache e i `Sync` | disegnare |
+| `collect.py` | orchestra le cinque sezioni (meteo, mare, calendario, differenziata, treni), gestisce la cache e i `Sync` | disegnare |
 | `sources/*` | `fetch_payload` (solo rete) e `parse` (solo trasformazione) | formattare per lo schermo |
 | `cache.py` | persistere l'ultimo payload buono | contenere modelli |
 | `model.py` | dataclass immutabili | importare Pillow |
@@ -79,7 +81,10 @@ collect() ──► PanelData ──► render_panel() ──► PNG ──► H
 | `server.py` | HTTP e ciclo di vita del PNG | contenere layout |
 | `__main__.py` | CLI sottile (`render`, `serve`, `resolve-station`) | logica di dominio |
 
-### Le tre invarianti che tengono in piedi tutto
+### Le invarianti che tengono in piedi tutto
+
+L'elenco completo è in `AGENTS.md` (dieci voci, comprese le regole di misura e di cedimento del
+renderer). Qui le tre che, se saltano, si vedono subito nel PNG.
 
 1. **`fetch_payload` e `parse` sono separati** in ogni sorgente.
    Non è pedanteria: è ciò che permette di salvare il **payload grezzo** in cache e ri-analizzarlo
@@ -108,6 +113,7 @@ PanelData(
     rendered_at,         # quando è stato disegnato il PNG (l'orologio grande)
     night,               # modalità notte: al posto dell'ora compare NOTTE
     weather, weather_sync,
+    sea, sea_sync,        # None = mare spento o senza dati: nessun blocco disegnato
     events, events_sync,
     waste, waste_sync,   # None = colonna differenziata spenta, () = configurata ma vuota
     departures, departures_sync,
@@ -142,9 +148,10 @@ Solo standard library: `urllib.request`. Caratteristiche:
 ```
 latitude, longitude,
 current=temperature_2m,weather_code,apparent_temperature,precipitation,
-        wind_speed_10m,wind_direction_10m
+        relative_humidity_2m,wind_speed_10m,wind_direction_10m
 daily=weather_code,temperature_2m_max,temperature_2m_min,
-      wind_speed_10m_max,wind_direction_10m_dominant
+      wind_speed_10m_max,wind_direction_10m_dominant,sunrise,sunset
+hourly=precipitation_probability
 timezone=Europe/Rome, forecast_days=3,
 temperature_unit=celsius, wind_speed_unit=kn, precipitation_unit=mm
 ```
@@ -152,14 +159,22 @@ temperature_unit=celsius, wind_speed_unit=kn, precipitation_unit=mm
 Il vento è in **nodi** (`wind_speed_unit=kn`) perché il pannello è nautico: l'unità si chiede
 all'API, non si converte nel renderer, altrimenti header e striscia potrebbero divergere.
 
+La **probabilità di pioggia** non è un campo "corrente": è il massimo di `precipitation_probability`
+nelle **prossime sei ore** (`_RAIN_WINDOW_HOURS`), trovando l'ora corrente nel prefisso ISO
+`YYYY-MM-DDTHH` delle serie orarie (le serie arrivano già nel fuso richiesto, quindi non serve
+interpretare date). Guardare la giornata intera farebbe leggere un temporale serale come "piove
+adesso".
+
 `parse()` costruisce `WeatherNow` (ora) e `DayForecast[]` (giorni). I codici **WMO** (0–99) sono
 mappati in due direzioni: una descrizione italiana (`label`) e una **famiglia di icona**
 (`icon_kind` → `sun`, `partly`, `cloud`, `rain`, `drizzle`, `snow`, `storm`, `fog`). Tenere separate
 le due cose evita che il renderer conosca i codici numerici.
 
-I campi aggiunti dopo (`wind_direction_10m`, `wind_speed_10m_max`) si leggono con gli helper di
+I campi aggiunti dopo (`wind_direction_10m`, `wind_speed_10m_max`, `sunrise`/`sunset`,
+`relative_humidity_2m`, la probabilità di pioggia) si leggono con gli helper di
 `sources/values.py`: un payload in cache scritto prima esiste ancora e deve restare ri-analizzabile,
-altrimenti il fallback smetterebbe di funzionare proprio quando serve.
+altrimenti il fallback smetterebbe di funzionare proprio quando serve. È anche il motivo per cui il
+pannello sa disegnare una riga di dettagli con due pezzi invece di tre.
 
 ### 4.3 Mare — Open-Meteo Marine (`sources/marine.py`)
 
@@ -224,7 +239,7 @@ Dettagli che contano:
 - se il dettaglio di un treno fallisce, quel treno resta nel pannello **senza** la riga delle
   fermate: degrado locale, non perdita della sezione.
 
-### 4.4 Calendario — ICS di Google (`sources/calendar.py`)
+### 4.5 Calendario — ICS di Google (`sources/calendar.py`)
 
 Si usa l'**indirizzo segreto iCal** (`.../ical/<id>/private-<token>/basic.ics`): niente OAuth, niente
 dipendenze, solo un file di testo con le regole RFC 5545. Il parser è scritto a mano e gestisce:
@@ -247,7 +262,7 @@ riconosce e scrive sul pannello *"calendario: serve l'URL iCal, non la pagina em
 calendario lo **sottoscrivi** e non è tuo, Google non fornisce l'indirizzo iCal: verificato con
 quattro varianti di URL pubblico, tutte `404`.
 
-### 4.5 Raccolta differenziata (`sources/waste.py`)
+### 4.6 Raccolta differenziata (`sources/waste.py`)
 
 Il calendario del comune è un ICS **pubblico** (`.../ical/<id>/public/basic.ics`) con una forma
 diversa da quella degli eventi: un `VEVENT` all-day per ogni giorno di raccolta, il materiale nel
@@ -261,7 +276,7 @@ renderer non deve calcolare buchi e la domenica — che nel calendario reale è 
 compare come `niente` invece di sparire. Il `limit` passato a `parse_events` è `days * 4` perché il
 suo tetto conta le occorrenze, non i giorni, e un giorno può avere più materiali.
 
-### 4.6 Cache e degrado (`collect.py` + `cache.py`)
+### 4.7 Cache e degrado (`collect.py` + `cache.py`)
 
 Per ogni sezione: `fetch → store(payload, istante) → parse`. Se il fetch fallisce: `load()` della
 cache, `parse` del payload salvato e `Sync(stale=True, updated_at=<quando>)`. Sul pannello il titolo
@@ -309,20 +324,38 @@ treno nel PNG (bug reale, scoperto guardando l'immagine e non dal linter). Le co
 treni (`_measure_columns`) sono misurate sul font reale, con un tetto percentuale per non sbilanciare
 la destinazione.
 
+`render/layout.py` ospita anche le etichette della rosa dei venti: `compass()` scrive la direzione a
+16 settori (`NNE`) e `wind_name()` il nome tradizionale (`Tramontana-Grecale`) dallo **stesso
+indice**, così sigla e nome non possono divergere. Gli intermedi seguono le lettere della sigla — la
+prima dà il primo nome, il resto il secondo (`OSO` = Ponente-Libeccio, `NNO` =
+Tramontana-Maestrale) — e si legge subito a quale cardinale il nome è legato.
+
 ### 5.4 Icone meteo vettoriali (`render/icons.py`)
 
-Otto glifi (`sun`, `partly`, `cloud`, `drizzle`, `rain`, `snow`, `storm`, `fog`) disegnati con
-primitive Pillow: cerchi pieni, ellissi, poligoni, linee con spessore proporzionale alla dimensione
-(`max(3, size // 14)`). **Niente emoji**: i font di sistema non le garantiscono e su e-ink
-arriverebbero a colori o come quadratini. Il glifo dipende solo dalla famiglia WMO, quindi il
-renderer non conosce i codici numerici.
+I glifi sono disegnati con primitive Pillow: cerchi pieni, ellissi, poligoni, linee con spessore
+proporzionale alla dimensione (`max(3, size // 14)`). **Niente emoji**: i font di sistema non le
+garantiscono e su e-ink arriverebbero a colori o come quadratini.
+
+- **meteo**: otto famiglie WMO (`sun`, `partly`, `cloud`, `drizzle`, `rain`, `snow`, `storm`, `fog`);
+  il glifo dipende solo dalla famiglia, quindi il renderer non conosce i codici numerici;
+- **mare**: quattro livelli di agitazione (`sea_calm`, `sea_slight`, `sea_moderate`, `sea_rough`),
+  presi dalla stessa tabella Douglas che produce forza e parola;
+- **righe di dettaglio**: `person`, `humidity`, `umbrella`, `wind`, `sunrise`, `sunset`,
+  `arrow_up`/`arrow_down`.
+
+Regola comune: dove il glifo è piccolo si disegna **pieno**, senza contorno. A 20 px un tratto da
+3 px mangia la forma: è la ragione per cui la persona è un busto stilizzato e l'umidità è una goccia
+fatta di un triangolo sovrapposto a un cerchio.
 
 ### 5.5 Impaginazione: un budget verticale, non un layout libero
 
 ```
-margin 22 → data → orologio → condizioni meteo
-──────────────── divider
-METEO      3 colonne (icona + giorni)
+margin 22 → data (sx) · luogo (dx)
+          → orologio (sx) · icona meteo + temperatura (dx)            _CLOCK_BAND_PX = 94
+          → riga dettagli: umidità · pioggia · percepita (dx)
+          → alba/tramonto · vento (sx) │ descrizione · mare (dx)      _STATUS_ROW_PX = 26
+──────────────── divider (_section_rule: nessun titolo "METEO")
+          3 colonne: icona + giorno/temperature + riga del mare       _FORECAST_ROW_SEA_PX = 58
 ────────────────
 CALENDARIO │ DIFFERENZIATA    due colonne quando `[waste]` è configurata
            │                  (_CALENDAR_ROW_PX = 44, gutter _COLUMN_GUTTER_PX = 16)
@@ -340,7 +373,37 @@ la colonna eventi prende il 60% di `content_width - gutter`, la differenziata il
 divisore verticale è alto quanto il contenuto. Con `[waste]` spenta il calendario resta a tutta
 larghezza come prima, quindi non esistono due layout da mantenere.
 
-### 5.6 Riga delle fermate con priorità
+### 5.6 Righe miste testo+icona (`_draw_inline`)
+
+Ogni riga fatta di testo e glifi è una sequenza di `_Segment`: o un `text`, o un `icon`, più un
+`required` che dice se il pezzo può cadere. `_draw_inline` misura i pezzi con `font.getlength` e
+allinea le icone al **centro dell'inchiostro** del testo (`_icon_top`), non al bordo del riquadro del
+font: sopra le maiuscole c'è "cielo" tipografico (8 px su un font da 20) e un glifo appoggiato al
+riquadro sembra sollevato rispetto alle lettere.
+
+`_fit_inline` è la politica di cedimento generica: toglie i pezzi non obbligatori **dal fondo**, poi
+accorcia l'ultimo testo con l'ellissi. Per le due colonne dell'intestazione c'è
+`_draw_balanced_row`: misura prima il blocco destro (è allineato al bordo) e dà al sinistro lo spazio
+che resta. È ciò che permette a `Tramontana-Maestrale` di convivere con la riga del mare senza che
+uno dei due sparisca.
+
+### 5.7 La riga dei dettagli del meteo
+
+Sotto la temperatura grande, allineati a destra, ci sono **umidità, pioggia e percepita** in
+quest'ordine, con `detail_font` (20 px bold) e icone da 20 px. A 16 px — la misura di footer, fermate
+e striscia mare — la riga si leggeva male e sul PNG l'ombrello sembrava una freccia.
+
+Il cedimento è deciso in `_draw_now_details`, **a coppie intere** e in ordine di importanza:
+
+1. riga piena, se sta fra orologio e bordo;
+2. via la **percepita**: la temperatura reale è già scritta grande sopra;
+3. via la **pioggia**: resta l'umidità come ancora della riga.
+
+Non si lascia decidere ai singoli `required`, che toglierebbero solo il numero lasciando l'icona
+orfana. E l'umidità è un campo opzionale, così una cache scritta prima del campo si disegna lo stesso
+con due pezzi invece di tre.
+
+### 5.8 Riga delle fermate con priorità
 
 `_stop_line(tokens, font, max_width)` riceve coppie `(testo, è_prioritaria)`: finché la riga non ci
 sta si rimuove **l'ultima fermata non prioritaria**, mai quelle elencate in `stop_priority`. Sui dati
@@ -353,7 +416,7 @@ Aurelia 22:17 · S.Pietro 22:24 · Trastevere 22:29 · Ostiense 22:36     (Tusco
 `_stop_label` toglie il prefisso città (`ROMA S.PIETRO` → `S.Pietro`), che è già nel titolo della
 sezione.
 
-### 5.7 Modalità notte nel renderer
+### 5.9 Modalità notte nel renderer
 
 `_clock_label(data)` restituisce `NOTTE` se `data.night`, altrimenti `HH:MM`. Tutto il resto del
 layout resta identico: nessun rimescolamento tra giorno e notte, quindi l'occhio ritrova subito le
@@ -488,23 +551,24 @@ Strategia: **nessun test tocca la rete, il filesystem utente o il device**. Tre 
 - `FakeService` + `build_server(..., port=0)` per provare l'HTTP su una porta effimera reale.
 
 I payload veri stanno in `tests/fixtures/` (`weather_openmeteo.json`, `marine_openmeteo.json`,
-`transitous_stoptimes.json`, `transitous_trip.json`, `transitous_geocode.json`, `calendar.ics`);
-`conftest.py` espone `read_fixture`, `load_json`, `rome`.
+`transitous_stoptimes.json`, `transitous_trip.json`, `transitous_geocode.json`, `calendar.ics`,
+`waste.ics`); `conftest.py` espone `read_fixture`, `load_json`, `rome`.
 
-| File | Test | Cosa copre |
-|---|---|---|
-| `test_render.py` | 31 | dimensioni/mode, determinismo, sezioni vuote, troncamenti, priorità fermate, `NOTTE`, segmenti testo+icona, punti cardinali |
-| `test_schedule.py` | 17 | confini 22:59/23:00 e 06:29/06:30, mezzanotte, clamp, intervalli |
-| `test_config.py` | 16 | valori, errori parlanti, override da ambiente, `stop_details`, `[schedule]`, `[sea]` |
-| `test_sea.py` | 16 | parsing Open-Meteo Marine, scala Douglas (forza e parola), campi mancanti, coordinate della richiesta |
-| `test_weather.py` | 15 | parsing Open-Meteo (nodi, direzione del vento), campi mancanti, codici WMO, unità della richiesta |
-| `test_trains.py` | 10 | partenze passate, ritardo, binario, cancellazioni, filtro, fermate da `/trip` |
-| `test_collect.py` | 7 | sezioni non configurate, fallback su cache con `stale=True` (meteo, differenziata, mare) |
-| `test_calendar.py` | 6 | `BYDAY`/`COUNT`, `EXDATE`, override `RECURRENCE-ID`, annullato, `TZID` sconosciuto, URL embed |
-| `test_waste.py` | 6 | ricorrenze e giorni della differenziata |
-| `test_server.py` | 5 | `/health`, `/panel.png`, `/panel.html`, 404, porta non rubabile, guardia anti-doppione |
+| File | Cosa copre |
+|---|---|
+| `test_render.py` | dimensioni/mode, determinismo, sezioni vuote, troncamenti, priorità fermate, `NOTTE`, segmenti testo+icona, riga dei dettagli (ordine e cedimento), punti cardinali e nomi dei venti |
+| `test_schedule.py` | confini 22:59/23:00 e 06:29/06:30, mezzanotte, clamp, intervalli |
+| `test_config.py` | valori, errori parlanti, override da ambiente, `stop_details`, `[schedule]`, `[sea]` |
+| `test_sea.py` | parsing Open-Meteo Marine, scala Douglas (forza e parola), campi mancanti, coordinate della richiesta |
+| `test_weather.py` | parsing Open-Meteo (nodi, direzione del vento, umidità), campi mancanti, codici WMO, unità e campi della richiesta |
+| `test_trains.py` | partenze passate, ritardo, binario, cancellazioni, filtro, fermate da `/trip` |
+| `test_collect.py` | sezioni non configurate, fallback su cache con `stale=True` (meteo, differenziata, mare) |
+| `test_calendar.py` | `BYDAY`/`COUNT`, `EXDATE`, override `RECURRENCE-ID`, annullato, `TZID` sconosciuto, URL embed |
+| `test_waste.py` | ricorrenze e giorni della differenziata |
+| `test_server.py` | `/health`, `/panel.png`, `/panel.html`, 404, porta non rubabile, guardia anti-doppione |
 
-Totale **129**, con `python -m pytest -q`.
+Il numero di test non è scritto qui apposta: cambia a ogni modifica e un conteggio fisso invecchia
+subito (era già successo). Il totale lo stampa `python -m pytest -q`.
 
 ---
 
@@ -563,8 +627,8 @@ kindle_dashboard/
   sources/calendar.py  parser ICS (folding, RRULE, EXDATE, RECURRENCE-ID)
   sources/waste.py     raccolta differenziata: finestra allineata ai giorni
   render/fonts.py      ricerca TTF con fallback
-  render/icons.py      glifi vettoriali: meteo, mare, vento, persona
-  render/layout.py     fit_text, divider, etichette di data, punti cardinali
+  render/icons.py      glifi vettoriali: meteo, mare, umidità, vento, persona, alba/tramonto, frecce
+  render/layout.py     fit_text, divider, etichette di data, punti cardinali e nomi dei venti
   render/panel.py      composizione del pannello (righe miste testo+icona)
 kindle/                estensione KUAL + deploy.ps1 + allow-lan.ps1
 tests/                 pytest con fixture registrate
@@ -589,7 +653,7 @@ Esercizi per fissare i concetti:
 - aggiungere `[calendar] refresh_seconds` separato, per scaricare l'ICS meno spesso (e misurare i byte);
 - aggiungere un TTL "imminente" per le API quando un treno parte entro 10 minuti;
 - provare `panel.height` a 700/740 e misurare con uno script il margine libero sotto il footer;
-- scrivere una nuova fonte (rifiuti, maree…) seguendo la checklist in `AGENTS.md`.
+- scrivere una nuova fonte (maree, qualità dell'aria…) seguendo la checklist in `AGENTS.md`.
 
 
 
