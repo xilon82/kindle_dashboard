@@ -87,8 +87,13 @@ La parte alta del pannello è a due colonne:
 
 - a sinistra data e orologio; sotto, **alba e tramonto** con il sole sul filo dell'orizzonte e la
   freccia su/giù, poi il **vento** in nodi con direzione e nome tradizionale (`6 kn ESE · Levante`);
-- a destra il luogo, l'icona del meteo con la temperatura, la **percepita** e la **probabilità di
-  pioggia** nelle prossime sei ore (ombrello), la descrizione e il mare.
+- a destra il luogo, l'icona del meteo con la temperatura e, sulla riga dei dettagli ingrandita,
+  **umidità** (goccia), **probabilità di pioggia** nelle prossime sei ore (ombrello) e **percepita**
+  (persona); sotto, la descrizione e il mare.
+
+Se la riga dei dettagli si stringe cede prima la **percepita** — la temperatura reale è già scritta
+grande sopra — e poi la **pioggia**: l'umidità resta come ancora. I pezzi cadono sempre a coppie
+intere, icona e numero insieme, mai un'icona senza valore.
 
 Il nome del vento segue la rosa a 16 settori: ogni direzione ha il suo nome e gli intermedi prendono
 il nome dei due venti principali **nell'ordine delle lettere della sigla** (`OSO` = Ponente-Libeccio,

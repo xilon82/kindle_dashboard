@@ -72,6 +72,9 @@ class _Style:
     text_font: Font
     small_font: Font
     title_font: Font
+    # Riga dei dettagli del meteo (umidità, pioggia, percepita): sta nello slack sotto la
+    # temperatura grande, dove c'è spazio, e a 16 px si leggeva male sul e-ink.
+    detail_font: Font
 
     @property
     def content_width(self) -> int:
@@ -226,6 +229,7 @@ def _build_style(size: tuple[int, int], font_override: str, bold_override: str) 
         text_font=regular(22),
         small_font=regular(16),
         title_font=bold(17),
+        detail_font=bold(20),
     )
 
 
@@ -381,15 +385,21 @@ def _wind_segments(weather: Weather) -> tuple[_Segment, ...]:
     return tuple(segments)
 
 
-def _now_detail_segments(weather: Weather, *, with_rain: bool = True) -> tuple[_Segment, ...]:
-    """Percepita e probabilità di pioggia: riga piccola sotto la temperatura grande."""
+def _now_detail_segments(
+    weather: Weather, *, with_apparent: bool = True, with_rain: bool = True
+) -> tuple[_Segment, ...]:
+    """Umidità, pioggia e percepita, nell'ordine in cui si leggono sotto la temperatura.
+
+    La percepita è il pezzo che si perde per primo: la temperatura reale è già scritta grande
+    sopra la riga. L'umidità fa da ancora, così la riga non resta mai vuota.
+    """
     segments: list[_Segment] = []
-    if weather.now.apparent is not None:
-        segments += [_icon("person"), _text(f"{weather.now.apparent:.0f}°")]
+    if weather.now.humidity is not None:
+        segments += [_icon("humidity"), _text(f"{weather.now.humidity}%")]
     if with_rain and weather.now.rain_probability is not None:
-        # Icona e percentuale sono due pezzi: la pioggia si toglie intera in ``_draw_now_details``,
-        # altrimenti il fit lascerebbe un ombrello senza numero.
         segments += [_icon("umbrella"), _text(f"{weather.now.rain_probability}%")]
+    if with_apparent and weather.now.apparent is not None:
+        segments += [_icon("person"), _text(f"{weather.now.apparent:.0f}°")]
     return tuple(segments)
 
 
@@ -400,22 +410,29 @@ def _draw_now_details(
     top: int,
     clock_right: int,
 ) -> None:
-    """Percepita e pioggia allineate a destra, nello spazio fra orologio e bordo."""
-    icon_size = style.px(16)
+    """Umidità, pioggia e percepita allineate a destra, nello spazio fra orologio e bordo.
+
+    I pezzi cadono a coppie intere (icona + numero) e in ordine di importanza: prima la
+    percepita, poi la pioggia, mentre l'umidità resta. Il cedimento è deciso qui e non dai
+    singoli ``required``: lasciandolo al fit resterebbe un'icona senza valore accanto.
+    """
+    icon_size = style.px(20)
     gap = style.px(_INLINE_GAP_PX)
     available = style.right - clock_right - style.px(_HEADER_GAP_PX)
     segments = _now_detail_segments(weather)
-    if _inline_width(segments, style.small_font, icon_size, gap) > available:
-        segments = _now_detail_segments(weather, with_rain=False)
-    fitted = _fit_inline(segments, style.small_font, icon_size, gap, available)
-    width = _inline_width(fitted, style.small_font, icon_size, gap)
+    if _inline_width(segments, style.detail_font, icon_size, gap) > available:
+        segments = _now_detail_segments(weather, with_apparent=False)
+    if _inline_width(segments, style.detail_font, icon_size, gap) > available:
+        segments = _now_detail_segments(weather, with_rain=False, with_apparent=False)
+    fitted = _fit_inline(segments, style.detail_font, icon_size, gap, available)
+    width = _inline_width(fitted, style.detail_font, icon_size, gap)
     _draw_inline(
         draw,
         style,
         fitted,
         style.right - width,
         top,
-        font=style.small_font,
+        font=style.detail_font,
         icon_size=icon_size,
     )
 

@@ -21,6 +21,7 @@ def test_parse_current_and_daily(load_json):
     assert parsed.now.wind_direction == 35
     # Massimo delle prossime sei ore: 15:00-20:00 nel fixture, 60% alle 18:00.
     assert parsed.now.rain_probability == 60
+    assert parsed.now.humidity == 65
     assert weather.label(parsed.now.code) == "sereno"
     assert weather.icon_kind(parsed.now.code) == "sun"
     assert [day.day for day in parsed.days] == [
@@ -58,6 +59,7 @@ def test_daily_wind_is_optional_so_an_old_cached_payload_still_parses(load_json)
     del payload["daily"]["sunrise"]
     del payload["daily"]["sunset"]
     del payload["hourly"]
+    del payload["current"]["relative_humidity_2m"]
 
     parsed = weather.parse(payload, days=3, timezone=TZ)
 
@@ -66,6 +68,7 @@ def test_daily_wind_is_optional_so_an_old_cached_payload_still_parses(load_json)
     assert parsed.days[0].sunrise is None
     assert parsed.days[0].sunset is None
     assert parsed.now.rain_probability is None
+    assert parsed.now.humidity is None
 
 
 def test_fetch_payload_asks_for_knots_and_wind_direction(monkeypatch):
@@ -84,6 +87,8 @@ def test_fetch_payload_asks_for_knots_and_wind_direction(monkeypatch):
     # Il pannello è nautico: se qualcuno rimette km/h, questo test lo ferma.
     assert params["wind_speed_unit"] == "kn"
     assert "wind_direction_10m" in params["current"]
+    # L'umidità relativa sta nella riga dei dettagli dell'intestazione.
+    assert "relative_humidity_2m" in params["current"]
     assert "wind_speed_10m_max" in params["daily"]
     # La direzione dominante serve alla striscia delle previsioni.
     assert "wind_direction_10m_dominant" in params["daily"]

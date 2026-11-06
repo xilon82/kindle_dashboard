@@ -21,7 +21,7 @@ API_URL = "https://api.open-meteo.com/v1/forecast"
 
 _CURRENT_FIELDS = (
     "temperature_2m,weather_code,apparent_temperature,precipitation,"
-    "wind_speed_10m,wind_direction_10m"
+    "relative_humidity_2m,wind_speed_10m,wind_direction_10m"
 )
 _DAILY_FIELDS = (
     "weather_code,temperature_2m_max,temperature_2m_min,"
@@ -137,6 +137,7 @@ def parse(payload: dict[str, Any], *, days: int, timezone: str) -> Weather:
             wind_kn=optional_float(current.get("wind_speed_10m")),
             wind_direction=optional_int(current.get("wind_direction_10m")),
             rain_probability=_rain_probability(payload.get("hourly"), current.get("time")),
+            humidity=optional_int(current.get("relative_humidity_2m")),
         )
         wind_series = daily.get("wind_speed_10m_max")
         wind_directions = daily.get("wind_direction_10m_dominant")

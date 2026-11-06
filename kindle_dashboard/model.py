@@ -24,6 +24,9 @@ class WeatherNow:
     # Probabilità massima di pioggia nelle prossime ore: il dato orario di Open-Meteo ridotto a
     # un numero, così il renderer non deve leggere serie temporali.
     rain_probability: int | None = None
+    # Umidità relativa in percentuale. Opzionale come gli altri extra: una cache scritta prima
+    # del campo deve restare disegnabile, con un pezzo in meno nella riga dei dettagli.
+    humidity: int | None = None
 
 
 @dataclass(frozen=True)

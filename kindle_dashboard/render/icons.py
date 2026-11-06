@@ -52,6 +52,8 @@ def draw_icon(draw: ImageDraw.ImageDraw, kind: str, box: tuple[int, int, int, in
         _wind(draw, left, top, size, stroke)
     elif kind == "person":
         _person(draw, left, top, size)
+    elif kind == "humidity":
+        _droplet(draw, left, top, size)
     elif kind == "sunrise":
         _horizon_sun(draw, left, top, size, stroke)
     elif kind == "sunset":
@@ -288,5 +290,34 @@ def _person(draw: ImageDraw.ImageDraw, left: float, top: float, size: int) -> No
         [left + size * 0.12, top + size * 0.52, left + size * 0.88, top + size * 1.48],
         180,
         360,
+        fill="black",
+    )
+
+
+def _droplet(draw: ImageDraw.ImageDraw, left: float, top: float, size: int) -> None:
+    """Goccia piena per l'umidità: punta in alto e corpo tondo.
+
+    Tutto pieno e senza contorno perché a 20 px un tratto da 3 px mangia il glifo (stessa
+    ragione della ``person``): la punta è un triangolo, il corpo un cerchio, e i due si
+    sovrappongono di poco perché non resti una tacca sul profilo.
+    """
+    center_x = left + size * 0.5
+    body_center_y = top + size * 0.64
+    body_radius = size * 0.3
+    draw.polygon(
+        [
+            (center_x, top + size * 0.04),
+            (center_x - size * 0.26, body_center_y),
+            (center_x + size * 0.26, body_center_y),
+        ],
+        fill="black",
+    )
+    draw.ellipse(
+        [
+            center_x - body_radius,
+            body_center_y - body_radius,
+            center_x + body_radius,
+            body_center_y + body_radius,
+        ],
         fill="black",
     )

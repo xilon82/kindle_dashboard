@@ -55,6 +55,12 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    **centro dell'inchiostro** del testo via `_icon_top`, non al bordo del riquadro del font. Le
    righe 5 e 6 dell'intestazione sono a due colonne dentro `_draw_balanced_row`: il blocco destro si
    misura per primo (è allineato al bordo) e quello sinistro riceve lo spazio che resta.
+10. **La riga dei dettagli del meteo (umidità, pioggia, percepita) usa `detail_font`**, non
+   `small_font`: è nello slack sotto la temperatura grande, dove i 16 px degli elenchi si leggevano
+   male, mentre `small_font` resta per footer, fermate e striscia mare. Il cedimento è deciso in
+   `_draw_now_details` **a coppie intere** — prima la percepita, poi la pioggia — perché lasciarlo ai
+   singoli `required` lascerebbe un'icona senza numero. L'umidità è opzionale (`optional_int`), così
+   una cache scritta prima del campo resta disegnabile.
 
 ### Configurazione
 
@@ -103,7 +109,7 @@ restare allineate.
 
 | Comando | Cosa copre |
 |---|---|
-| `python -m pytest -q` | 153 test: parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP |
+| `python -m pytest -q` | parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP |
 | `python -m ruff check .` | stile (line-length 110, regole E/F/I/UP/B/SIM/RUF) |
 | `python -m kindle_dashboard render -o preview.png` | verifica visiva reale |
 

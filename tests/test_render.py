@@ -23,6 +23,7 @@ from kindle_dashboard.model import (
 from kindle_dashboard.render import fonts
 from kindle_dashboard.render.layout import COMPASS_POINTS, WIND_NAMES, compass, waste_day_label, wind_name
 from kindle_dashboard.render.panel import (
+    _build_style,
     _clock_label,
     _fit_inline,
     _icon_top,
@@ -57,6 +58,7 @@ def full_panel() -> PanelData:
                 wind_kn=8.4,
                 wind_direction=18,
                 rain_probability=40,
+                humidity=62,
             ),
             days=(
                 DayForecast(
@@ -414,19 +416,55 @@ def test_wind_segments_keep_the_direction_and_add_the_traditional_name():
     assert [segment.required for segment in segments if segment.text] == [True, True, False]
 
 
-def test_now_details_pair_apparent_with_rain_probability():
+def test_now_details_show_humidity_rain_and_apparent_temperature():
+    weather = Weather(
+        now=WeatherNow(temperature=16.6, code=2, apparent=15.9, rain_probability=40, humidity=63),
+        days=(),
+    )
+
+    segments = _now_detail_segments(weather)
+    without_apparent = _now_detail_segments(weather, with_apparent=False)
+
+    # Ordine di lettura: umidità, pioggia, percepita (l'umidità ha la goccia, la percezione il
+    # glifo "persona": è quello che sente il corpo, non un termometro).
+    assert [segment.icon for segment in segments if segment.icon] == [
+        "humidity",
+        "umbrella",
+        "person",
+    ]
+    assert [segment.text for segment in segments if segment.text] == ["63%", "40%", "16°"]
+    assert [segment.text for segment in without_apparent if segment.text] == ["63%", "40%"]
+
+
+def test_now_details_drop_the_apparent_temperature_before_the_rain():
+    """La percepita è il pezzo più sacrificabile: la temperatura reale è già grande sopra la riga."""
+    weather = Weather(
+        now=WeatherNow(temperature=16.6, code=2, apparent=15.9, rain_probability=40, humidity=63),
+        days=(),
+    )
+
+    humidity_only = _now_detail_segments(weather, with_rain=False, with_apparent=False)
+
+    assert [segment.text for segment in humidity_only if segment.text] == ["63%"]
+
+
+def test_now_details_survive_a_cache_without_humidity():
     weather = Weather(
         now=WeatherNow(temperature=16.6, code=2, apparent=15.9, rain_probability=40),
         days=(),
     )
 
-    segments = _now_detail_segments(weather)
-    without_rain = _now_detail_segments(weather, with_rain=False)
+    assert [segment.text for segment in _now_detail_segments(weather) if segment.text] == [
+        "40%",
+        "16°",
+    ]
 
-    # Il percepito usa il glifo "persona": è quello che sente il corpo, non un termometro.
-    assert [segment.icon for segment in segments if segment.icon] == ["person", "umbrella"]
-    assert [segment.text for segment in segments if segment.text] == ["16°", "40%"]
-    assert [segment.text for segment in without_rain if segment.text] == ["16°"]
+
+def test_detail_font_is_bigger_than_the_small_font():
+    """La riga dei dettagli è ingrandita: se qualcuno la riporta a ``small_font``, questo cade."""
+    style = _build_style((600, 800), "", "")
+
+    assert style.detail_font.getlength("0123456789") > style.small_font.getlength("0123456789")
 
 
 def test_now_details_are_empty_when_the_weather_has_no_extras():
