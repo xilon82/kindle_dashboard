@@ -117,6 +117,10 @@ Errori realmente accaduti qui, da non ripetere:
 - Non creare commit "di servizio" per far passare il linter: prima si sistema, poi si chiede.
 - Non scrivere sul Kindle (`G:\`) senza motivo: durante lo sviluppo solo `deploy.ps1 -DryRun`.
 - Dopo una modifica al layout rigenera `preview.png` e **guardalo**: i difetti visivi non li vede ruff.
+- **Se cambi fonti, renderer o test, aggiorna anche `docs/technical-walkthrough.md`**: è un documento
+  narrato e invecchia in silenzio (elencava `Totale 129` test, aveva due `### 4.4` e un blocco di
+  parametri Open-Meteo senza l'umidità). E niente conteggi fissi nei documenti: cambiano a ogni
+  commit, quindi il numero lo stampa `python -m pytest -q`.
 
 ## §Dove va una lezione nuova
 
@@ -125,6 +129,7 @@ Errori realmente accaduti qui, da non ripetere:
 | Vincolo operativo, errore da non ripetere, policy | `.clinerules` (qui) |
 | Architettura, invarianti, come estendere, mappa dei test | `AGENTS.md` |
 | Uso, configurazione, troubleshooting per l'utente | `README.md` |
+| Percorso tecnico narrato, con i bug e il perché delle scelte | `docs/technical-walkthrough.md` |
 | Guida didattica su uno strumento (venv, Docker) | `docs/<strumento>.md` |
 | Perché di una scelta puntuale di codice | commento nel codice |
 
