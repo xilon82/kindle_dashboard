@@ -39,7 +39,11 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    il device non deve scalare nulla.
 6. **Le larghezze di colonna si misurano con `font.getlength`**, mai con pixel fissi.
 7. **L'intervallo di aggiornamento si calcola solo in `schedule.py`**: fascia corrente e clamp al
-   prossimo cambio. Server e renderer leggono quel risultato, non lo ricalcolano.
+   prossimo cambio. Server e renderer leggono quel risultato, non lo ricalcolano. La stessa regola
+   vale per la fascia notturna che decide `NOTTE` al posto dell'orologio: `is_night()` sta lì,
+   `collect()` la applica ai dati raccolti e il server la **ricalcola all'istante del render** (i
+   dati possono essere più vecchi di un'ora, l'orologio no); `python -m kindle_dashboard render`
+   legge il valore di `collect()`, così anteprima e PNG servito mostrano la stessa cosa.
 8. **Il vento è in nodi** (`wind_speed_unit=kn`): modello, header e striscia usano la stessa unità e
    nessuno converte nel renderer. La direzione si scrive a 16 settori (`NNE`) ed è **obbligatoria**:
    sulla riga del vento cede il nome tradizionale (`· Levante-Scirocco`), non la sigla. Il nome
@@ -61,6 +65,39 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    `_draw_now_details` **a coppie intere** — prima la percepita, poi la pioggia — perché lasciarlo ai
    singoli `required` lascerebbe un'icona senza numero. L'umidità è opzionale (`optional_int`), così
    una cache scritta prima del campo resta disegnabile.
+11. **Le icone hanno due toni**: nero per l'elemento principale, `_PALE` (`#8c8c8c`, metà scala
+   dell'immagine in grigi) per quello che sta **dietro** — il sole coperto di `partly` (con i raggi) e
+   la calotta di sole *senza raggi* di `cloud`/`rain`/`drizzle`/`snow` (via `_cloud_with_sun`), il
+   lampo di `storm`, le righe di `fog`. Serve a separare due forme che si toccano senza contorni, che a
+   20 px mangerebbero il disegno; altrove i glifi restano pieni e neri, perché un grigio debole su
+   e-ink sparisce. Non è un'ombra decorativa né un secondo elemento: il secondo tono va sul pezzo che
+   nella sagoma originale sta dietro, altrimenti si leggono due soli nello stesso glifo. Le icone dei
+   titoli (`_column_title(..., icon=...)`) passano da `_title_icon`, che restituisce `(0, 0)` quando il
+   titolo con `· agg. HH:MM` non ci starebbe: l'icona è decorazione e cede **prima del testo**, che
+   porta l'informazione. I glifi di sezione (`calendar`, `waste`, `train`) seguono la geometria di
+   Bootstrap Icons (MIT) tradotta in primitive — corpo pieno e ritagli bianchi, nessun asset esterno.
+12. **Il font del pannello viaggia con il pannello**: `kindle_dashboard/render/fonts/` contiene
+   `LiberationSans-Regular.ttf` e `LiberationSans-Bold.ttf` (i TTF di Debian `fonts-liberation`, che il
+   container usa da sempre) più `OFL.txt`, la licenza **SIL OFL 1.1** che va ridistribuita accanto ai
+   binari: il font non si rinomina e non si vende da solo. `fonts.shipped_font()` è la prima scelta di
+   `load()`, `[tool.setuptools.package-data]` la porta nel pacchetto e `.ttf binary` in `.gitattributes`
+   impedisce a git di normalizzare un binario. Il motivo è la misura, non l'estetica: le colonne si
+   dimensionano con `font.getlength`, quindi anteprima e device devono usare **lo stesso file**. Con
+   Liberation solo di sistema il PC sceglieva il Segoe UI Semibold — 89 px su `REG 12519` contro 102 px
+   — e l'anteprima mostrava righe integre che il Kindle troncava; con un font più largo (DejaVu Sans
+   Bold, ~1,30x) succedeva l'opposto, `REG 12…` e `SAB 18°/…` nel container.
+   I ripieghi restano, in quest'ordine: override `[render] font`/`font_bold`, TTF incluso, ricerca di
+   sistema (`font_directories()` su Windows `%WINDIR%\Fonts`, macOS, Linux
+   `/usr/share/fonts/truetype/{dejavu,liberation,noto}` più `/usr/share/fonts/TTF` e
+   `/usr/local/share/fonts`). Nella ricerca l'ordine è **per nome e poi per cartella** (con il ciclo
+   cartella-major la prima cartella di `font_directories()`, `dejavu` su Debian, vinceva su tutto), e
+   il primo nome è `LiberationSans-*`, lo stesso del file spedito: se i dati del pacchetto mancassero,
+   il ripiego prenderebbe lo stesso font. `REQUIRED_GLYPHS` (`°·…×àèéìòù`) è il minimo che il font
+   deve coprire e `missing_glyphs()` lo verifica confrontando il bounding box di ogni carattere con
+   quello di U+E000, che Pillow disegna sempre uguale (senza questo controllo un container senza TTF
+   stampava quadrati al posto delle accentate). `tests/test_fonts.py` tiene fermi l'esistenza e la
+   licenza del file spedito, che `load()` usi quello e l'ordine dei ripieghi. Cambiare font cambia tutte
+   le misure, quindi le regole di cedimento non vanno allentate «perché tanto il font è quello».
 
 ### Configurazione
 
@@ -88,13 +125,20 @@ lo specifica. Una sezione assente disattiva la relativa parte del pannello, non 
 2. Usa `style.px()` per le misure e `fit_text()` per i testi: righe e larghezze dai font. Per una
    riga mista testo+icona usa `_draw_inline` con segmenti `_Segment` (`required=False` sui pezzi che
    possono cedere): il troncamento vive lì e non va duplicato.
-3. Rispetta il budget verticale (`_TITLE_ROW_PX` per il titolo, costante di riga dedicata) e la
-   regola "i treni hanno lo spazio riservato in fondo". Una sezione che si riconosce dalle icone può
-   fare a meno del titolo e usare `_section_rule` (solo separatore): la striscia meteo lo fa e
-   guadagna una riga.
+3. Rispetta il budget verticale (`_TITLE_ROW_PX` per il titolo, costante di riga dedicata): il blocco
+   treni è **ancorato** al fondo (`footer_top - _trains_height`) e l'agenda riceve lo spazio che
+   resta, così i treni non restano a metà pagina quando gli eventi sono pochi. Una sezione che si
+   riconosce dalle icone può fare a meno del titolo e usare `_section_rule` (solo separatore): la
+   striscia meteo lo fa e guadagna una riga.
 4. Aggiorna `tests/test_render.py` e rigenera `preview.png`.
 5. Il blocco agenda (`_draw_agenda`) ha due colonne solo quando `PanelData.waste` non è `None`: le
    larghezze vengono da `_EVENTS_SHARE` e `_COLUMN_GUTTER_PX`, non da pixel scelti a occhio.
+6. **Il riassunto di un evento va a capo su due righe** (`layout.wrap_text`, passo
+   `_CALENDAR_LINE_PX`) ma solo con lo spazio che avanza: `_draw_events` conta prima quanti eventi
+   stanno su una riga sola (`room // row`) e riserva una riga a ciascuno, poi concede la seconda
+   riga solo a chi ci sta dentro il margine. La regola non è cosmetica: senza prenotazione un evento
+   lungo si prende lo spazio del successivo e lo fa sparire, che è peggio dell'ellissi che si voleva
+   evitare. `wrap_text(text, font, width, lines=1)` è il ritorno all'ellissi quando non c'è spazio.
 
 ### Nuovo comando CLI
 1. `commands.add_parser(..., parents=[common])` in `_build_parser()` (il parent fornisce `--config`).

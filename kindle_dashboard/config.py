@@ -74,7 +74,7 @@ class TrainsConfig:
     base_url: str = "https://api.transitous.org"
     station: str = ""
     stop_id: str = ""
-    max_departures: int = 4
+    max_departures: int = 3
     destinations: tuple[str, ...] = ()
     stop_details: bool = False
     stop_priority: tuple[str, ...] = ()
@@ -206,7 +206,7 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
             station=_str(trains, "station", "", where="trains").strip(),
             stop_id=_str(trains, "stop_id", "", where="trains").strip(),
             max_departures=_int(
-                trains, "max_departures", 4, where="trains", minimum=1, maximum=20
+                trains, "max_departures", 3, where="trains", minimum=1, maximum=20
             ),
             destinations=_str_tuple(trains, "destinations", where="trains"),
             stop_details=_bool(trains, "stop_details", False, where="trains"),

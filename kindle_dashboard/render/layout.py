@@ -75,6 +75,41 @@ def fit_text(text: str, font: Font, max_width: float) -> str:
     return f"{trimmed.rstrip()}{ELLIPSIS}" if trimmed else ""
 
 
+def wrap_text(text: str, font: Font, max_width: float, *, lines: int = 2) -> tuple[str, ...]:
+    """Spezza ``text`` in al massimo ``lines`` righe, con l'ellissi sull'ultima.
+
+    Il taglio cade su uno spazio — mai dentro una parola — e l'ultima riga passa da `fit_text`:
+    quello che non entra diventa ellissi invece di sparire. Il numero di righe è noto *prima* di
+    disegnare, così chi chiama può decidere l'altezza della riga e, se non c'è spazio, tornare a
+    una riga sola (`lines=1`) senza perdere la voce.
+    """
+    if max_width <= 0 or lines < 1:
+        return ()
+    words = text.split()
+    if not words:
+        return ()
+    result: list[str] = []
+    index = 0
+    while index < len(words) and len(result) < lines - 1:
+        current = words[index]
+        index += 1
+        while index < len(words):
+            candidate = f"{current} {words[index]}"
+            if font.getlength(candidate) > max_width:
+                break
+            current = candidate
+            index += 1
+        if font.getlength(current) > max_width:
+            # Una parola singola più larga della riga: non ha senso spezzarla a metà, si lascia
+            # all'ultima riga che la accorcia con l'ellissi.
+            break
+        result.append(current)
+    tail = " ".join(words[index:])
+    if tail:
+        result.append(fit_text(tail, font, max_width))
+    return tuple(result)
+
+
 def divider(
     draw: ImageDraw.ImageDraw, left: float, right: float, y: float, thickness: int = 2
 ) -> None:

@@ -7,6 +7,10 @@ import math
 from PIL import ImageDraw
 
 _STROKE_DIVISOR = 14
+# Secondo tono per gli elementi che stanno "dietro" (il sole coperto, il lampo): sull'e-ink a
+# 16 livelli un grigio a metà scala resta distinto sia dal nero sia dalla carta, e separa le
+# forme senza dover introdurre contorni che a 20 px si mangerebbero il disegno.
+_PALE = "#8c8c8c"
 # Livello di "agitazione" del glifo per ciascuno stato del mare (vedi ``sources.marine``).
 _SEA_KINDS = {"sea_calm": 1, "sea_slight": 2, "sea_moderate": 3, "sea_rough": 4}
 
@@ -21,12 +25,15 @@ def draw_icon(draw: ImageDraw.ImageDraw, kind: str, box: tuple[int, int, int, in
     if kind == "sun":
         _sun(draw, left, top, size, stroke)
     elif kind == "partly":
-        _sun(draw, left, top, int(size * 0.72), stroke)
+        # Sole in grigio dietro la nuvola: con due neri che si toccano il glifo sembrava una macchia.
+        _sun(draw, left, top, int(size * 0.72), stroke, fill=_PALE)
         _cloud(draw, left + size * 0.2, top + size * 0.42, size * 0.8, size * 0.5)
     elif kind == "fog":
         _fog(draw, left, top, size, stroke)
+    elif kind == "cloud":
+        _cloud_with_sun(draw, left, top, size, size * 0.8)
     elif kind == "snow":
-        _cloud(draw, left, top, size, size * 0.6)
+        _cloud_with_sun(draw, left, top, size, size * 0.6)
         _snowflakes(draw, left, top + size * 0.68, size, stroke)
     elif kind == "storm":
         _cloud(draw, left, top, size, size * 0.62)
@@ -40,11 +47,11 @@ def draw_icon(draw: ImageDraw.ImageDraw, kind: str, box: tuple[int, int, int, in
                 (left + size * 0.50, top + size * 0.78),
                 (left + size * 0.60, top + size * 0.56),
             ],
-            fill="black",
+            fill=_PALE,
         )
     elif kind in {"rain", "drizzle"}:
         share = 0.62 if kind == "rain" else 0.72
-        _cloud(draw, left, top, size, size * share)
+        _cloud_with_sun(draw, left, top, size, size * share)
         _rain(draw, left, top + size * share, size, stroke, drops=3 if kind == "rain" else 2)
     elif kind in _SEA_KINDS:
         _waves(draw, left, top, size, stroke, level=_SEA_KINDS[kind])
@@ -62,16 +69,24 @@ def draw_icon(draw: ImageDraw.ImageDraw, kind: str, box: tuple[int, int, int, in
         _arrow(draw, left, top, size, stroke, up=kind == "arrow_up")
     elif kind == "umbrella":
         _umbrella(draw, left, top, size, stroke)
+    elif kind == "calendar":
+        _calendar(draw, left, top, size)
+    elif kind == "waste":
+        _bin(draw, left, top, size)
+    elif kind == "train":
+        _train(draw, left, top, size)
     else:
         _cloud(draw, left, top, size, size * 0.8)
 
 
-def _sun(draw: ImageDraw.ImageDraw, left: int, top: int, size: int, stroke: int) -> None:
+def _sun(
+    draw: ImageDraw.ImageDraw, left: int, top: int, size: int, stroke: int, *, fill: str = "black"
+) -> None:
     radius = size * 0.24
     center_x = left + size / 2
     center_y = top + size / 2
     draw.ellipse(
-        [center_x - radius, center_y - radius, center_x + radius, center_y + radius], fill="black"
+        [center_x - radius, center_y - radius, center_x + radius, center_y + radius], fill=fill
     )
     inner = radius * 1.45
     outer = radius * 2.02
@@ -83,24 +98,60 @@ def _sun(draw: ImageDraw.ImageDraw, left: int, top: int, size: int, stroke: int)
                 center_x + dx * outer,
                 center_y + dy * outer,
             ],
-            fill="black",
+            fill=fill,
             width=stroke,
         )
 
 
 def _cloud(
-    draw: ImageDraw.ImageDraw, left: float, top: float, width: float, height: float
+    draw: ImageDraw.ImageDraw,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+    *,
+    fill: str = "black",
 ) -> None:
     """Nuvola piena: due cerchi più una base arrotondata."""
     radius = height * 0.42
     base_top = top + height - radius
     draw.ellipse(
         [left + width * 0.02, base_top, left + width * 0.02 + 2 * radius, top + height],
-        fill="black",
+        fill=fill,
     )
     draw.ellipse(
         [left + width - 2 * radius - width * 0.04, top + height * 0.06,
          left + width - width * 0.04, top + height * 0.06 + 2 * radius],
+        fill=fill,
+    )
+    draw.rounded_rectangle(
+        [left + radius * 0.75, top + height * 0.42, left + width - radius * 0.75, top + height],
+        radius=radius * 0.7,
+        fill=fill,
+    )
+
+
+def _cloud_with_sun(
+    draw: ImageDraw.ImageDraw, left: float, top: float, width: float, height: float
+) -> None:
+    """Nuvola con il sole coperto: il cerchio alto a destra è il sole, il resto è la nuvola.
+
+    È la sagoma originale del glifo "coperto" — un sole *senza raggi* a destra, coperto dalla
+    nuvola — con il solo elemento che sta dietro in secondo tono. Aggiungere un sole raggiato come
+    in ``partly`` farebbe sembrare che nello stesso glifo ci siano due soli.
+    """
+    radius = height * 0.42
+    draw.ellipse(
+        [
+            left + width - 2 * radius - width * 0.04,
+            top + height * 0.06,
+            left + width - width * 0.04,
+            top + height * 0.06 + 2 * radius,
+        ],
+        fill=_PALE,
+    )
+    draw.ellipse(
+        [left + width * 0.02, top + height - radius, left + width * 0.02 + 2 * radius, top + height],
         fill="black",
     )
     draw.rounded_rectangle(
@@ -140,13 +191,19 @@ def _snowflakes(draw: ImageDraw.ImageDraw, left: float, top: float, size: int, s
 
 
 def _fog(draw: ImageDraw.ImageDraw, left: int, top: int, size: int, stroke: int) -> None:
-    rows = (0.2, 0.45, 0.7, 0.9)
-    for index, fraction in enumerate(rows):
-        inset = size * (0.18 if index % 2 else 0.06)
+    """Nebbia: nuvola nera in alto e tre righe grigie sotto.
+
+    Il grigio resta l'elemento secondario (le righe), non un riempimento: quattro righe nere
+    sarebbero un blocco unico.
+    """
+    _cloud(draw, left, top, size, size * 0.42)
+    thin = max(2, stroke - 1)
+    for index, fraction in enumerate((0.58, 0.76, 0.94)):
+        inset = size * (0.06 if index % 2 == 0 else 0.16)
         draw.line(
             [left + inset, top + size * fraction, left + size - inset, top + size * fraction],
-            fill="black",
-            width=stroke,
+            fill=_PALE,
+            width=thin,
         )
 
 
@@ -292,6 +349,82 @@ def _person(draw: ImageDraw.ImageDraw, left: float, top: float, size: int) -> No
         360,
         fill="black",
     )
+
+
+def _calendar(draw: ImageDraw.ImageDraw, left: float, top: float, size: int) -> None:
+    """Calendario: corpo tondo, due anelli in alto e la riga bianca dell'intestazione.
+
+    Geometria ripresa da `calendar-fill` di Bootstrap Icons (MIT): le celle dei giorni a 16-22 px
+    diventano puntini illeggibili, mentre la riga bianca si legge subito.
+    """
+    draw.rounded_rectangle(
+        [left + size * 0.05, top + size * 0.18, left + size * 0.95, top + size * 0.96],
+        radius=size * 0.14,
+        fill="black",
+    )
+    for ring_x in (0.24, 0.64):
+        draw.rectangle(
+            [left + size * ring_x, top + size * 0.02,
+             left + size * (ring_x + 0.14), top + size * 0.28],
+            fill="black",
+        )
+    draw.rectangle(
+        [left + size * 0.11, top + size * 0.42, left + size * 0.89, top + size * 0.52],
+        fill="white",
+    )
+
+
+def _bin(draw: ImageDraw.ImageDraw, left: float, top: float, size: int) -> None:
+    """Bidone della differenziata: maniglia piatta, coperchio, corpo e tre stecche bianche.
+
+    Geometria ripresa da `trash-fill` di Bootstrap Icons (MIT): le stecche sono ciò che lo fa
+    leggere "bidone" invece di "secchio", perché a 20 px il solo profilo è ambiguo.
+    """
+    draw.rectangle(
+        [left + size * 0.36, top + size * 0.02, left + size * 0.64, top + size * 0.14],
+        fill="black",
+    )
+    draw.rectangle(
+        [left + size * 0.05, top + size * 0.14, left + size * 0.95, top + size * 0.28],
+        fill="black",
+    )
+    draw.rectangle(
+        [left + size * 0.16, top + size * 0.34, left + size * 0.84, top + size * 0.96],
+        fill="black",
+    )
+    for rib_x in (0.28, 0.46, 0.64):
+        draw.rectangle(
+            [left + size * rib_x, top + size * 0.44,
+             left + size * (rib_x + 0.08), top + size * 0.86],
+            fill="white",
+        )
+
+
+def _train(draw: ImageDraw.ImageDraw, left: float, top: float, size: int) -> None:
+    """Treno di fronte: capsula, feritoia, finestrino e due ruote.
+
+    Geometria ripresa da `train-front-fill` di Bootstrap Icons (MIT): il finestrino grande è ciò
+    che rende riconoscibile il frontale a 20 px.
+    """
+    draw.rounded_rectangle(
+        [left + size * 0.16, top + size * 0.04, left + size * 0.84, top + size * 0.80],
+        radius=size * 0.18,
+        fill="black",
+    )
+    draw.rectangle(
+        [left + size * 0.36, top + size * 0.10, left + size * 0.64, top + size * 0.18],
+        fill="white",
+    )
+    draw.rectangle(
+        [left + size * 0.25, top + size * 0.24, left + size * 0.75, top + size * 0.48],
+        fill="white",
+    )
+    for wheel_x in (0.30, 0.70):
+        draw.ellipse(
+            [left + size * (wheel_x - 0.09), top + size * 0.82,
+             left + size * (wheel_x + 0.09), top + size * 0.98],
+            fill="black",
+        )
 
 
 def _droplet(draw: ImageDraw.ImageDraw, left: float, top: float, size: int) -> None:

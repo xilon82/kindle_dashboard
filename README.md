@@ -52,11 +52,11 @@ Copy-Item config.example.toml config.toml
 | `waste` | `ics_url` | vuoto | URL iCal **pubblico** del calendario della raccolta differenziata (vuoto = colonna destra assente) |
 | `waste` | `days` | 3 | giorni mostrati nella colonna: oggi, domani e il successivo |
 | `trains` | `station`, `stop_id` | — | stazione del tabellone (assente = niente treni) |
-| `trains` | `max_departures` | 4 | partenze mostrate |
+| `trains` | `max_departures` | 3 | partenze mostrate |
 | `trains` | `destinations` | `[]` | filtro per sottostringa (vuoto = tutte) |
 | `trains` | `stop_details` | `false` | seconda riga per treno con le fermate che corrispondono a `destinations` (una richiesta HTTP per treno) |
 | `trains` | `stop_priority` | `[]` | fermate da tenere sempre quando la riga non basta: le altre vengono ridotte |
-| `render` | `font`, `font_bold` | vuoto | percorsi TTF alternativi a quelli di sistema |
+| `render` | `font`, `font_bold` | vuoto | percorsi TTF alternativi a Liberation Sans, che viaggia nel pacchetto (`kindle_dashboard/render/fonts/`) |
 | `server` | `host`, `port` | `0.0.0.0`, 8787 | dove ascolta il PC |
 | `schedule` | `night_start`, `night_end` | `23:00`, `06:30` | fascia notturna (finestra anche a cavallo di mezzanotte) |
 | `schedule` | `night_refresh_seconds` | `3600` | ricarica di notte; di notte l'ora è sostituita da `NOTTE` |
@@ -67,6 +67,11 @@ Copy-Item config.example.toml config.toml
 Google Calendar > Impostazioni del calendario > *Indirizzo segreto in formato iCal*: incolla l'URL
 in `calendar.ics_url`. In alternativa usa la variabile d'ambiente `KDASH_ICS_URL`, che ha la
 precedenza solo se il file non specifica nulla: utile per non scrivere la credenziale su disco.
+
+Il titolo dell'evento che non entra nella colonna **va a capo su una seconda riga**, rientrata sotto
+il titolo; il taglio cade sempre su uno spazio, mai dentro una parola. La seconda riga si prende solo
+lo spazio che avanza: se non basta si torna a una riga sola con i puntini, e il numero di eventi
+mostrati resta quello di prima — un evento lungo non può far sparire quello successivo.
 
 ### Raccolta differenziata
 
@@ -94,6 +99,12 @@ La parte alta del pannello è a due colonne:
 Se la riga dei dettagli si stringe cede prima la **percepita** — la temperatura reale è già scritta
 grande sopra — e poi la **pioggia**: l'umidità resta come ancora. I pezzi cadono sempre a coppie
 intere, icona e numero insieme, mai un'icona senza valore.
+
+Le icone del meteo usano **due toni**: nel *poco nuvoloso* il sole dietro la nuvola è grigio, così le
+due forme non si fondono in una macchia nera (lo stesso vale per il lampo del temporale).
+I titoli delle sezioni hanno la loro icona — calendario, bidone della differenziata, treno — ma è
+decorazione: se il titolo è lungo (con `· agg. HH:MM` perché quei dati vengono dalla cache) l'icona
+cede e resta il testo.
 
 Il nome del vento segue la rosa a 16 settori: ogni direzione ha il suo nome e gli intermedi prendono
 il nome dei due venti principali **nell'ordine delle lettere della sigla** (`OSO` = Ponente-Libeccio,
@@ -301,6 +312,9 @@ Tutti accettano `--config <file>` dopo il sottocomando.
 | Sintomo | Causa e rimedio |
 |---|---|
 | `fuso orario 'Europe/Rome' non disponibile` | manca `tzdata`: `python -m pip install tzdata` |
+| Nel pannello compaiono quadratini al posto delle accentate o del segno di moltiplicazione | il font scelto non ha quei caratteri: succede dove non è installato nessun TTF, e Pillow usa un font incorporato incompleto | installa un font di sistema (su Debian/Ubuntu `fonts-liberation`, `fonts-dejavu-core` come riserva) oppure indica un `.ttf` in `[render] font` e `font_bold` |
+| Nel container le righe finiscono con `…` (`REG 12…`, `SAB 18°/…`, `poco mosso`) mentre l'anteprima sul PC è integra | l'anteprima e il device misurano font diversi: le colonne, misurate con `font.getlength`, tagliano il testo | il PC non sta usando il TTF incluso nel pacchetto. Diagnosi: `python -c "from kindle_dashboard.render import fonts; print(fonts.load(19).path)"` deve stampare un percorso dentro `kindle_dashboard/render/fonts/`, non `C:\WINDOWS\Fonts\…`; se esce dal repo, reinstalla (`python -m pip install -e .`) o togli l'override in `[render] font`/`font_bold`. Se il PC è a posto, è il container a essere vecchio: `docker compose build` + `docker rm -f kindle-dashboard` + `docker compose up -d`. Per il confronto usa `python -m kindle_dashboard render -o preview.png` |
+| Voglio cambiare o aggiornare il font del pannello | i TTF stanno nel repo (`kindle_dashboard/render/fonts/`), così PC e device usano lo stesso file | sostituisci `LiberationSans-Regular.ttf`/`LiberationSans-Bold.ttf` (e `OFL.txt` se cambi famiglia: la licenza deve viaggiare con i binari) e rifai **tutte** le misure: `python -m pytest -q`, `python -m kindle_dashboard render -o preview.png`, poi guarda il PNG. Per il container serve ricostruire **e** ricreare (`docker compose build` + `docker rm -f kindle-dashboard` + `docker compose up -d`) |
 | Il Kindle non scarica nulla | verifica `http://<ip>:8787/panel.png` dal PC, poi dallo stesso URL nel browser del Kindle; controlla la regola firewall sulla rete privata |
 | Dal browser del Kindle "impossibile connettersi" | la rete è classificata **Public** da Windows e la regola `Private` non si applica: lancia `kindle\allow-lan.ps1` come amministratore (riclassifica la rete e apre la porta). Se alterni 2.4/5 GHz, usa `-AnyProfile`: il profilo firewall è per SSID, quindi cambiando banda la regola `Private` smetterebbe di valere |
 | Il Kindle non vede la rete Wi-Fi del PC | SSID a 5 GHz: il Kindle 4 ha solo radio 2.4 GHz, collegalo all'SSID 2.4 GHz dello stesso router (stessa subnet, senza "AP isolation") |

@@ -107,6 +107,38 @@ Errori realmente accaduti qui, da non ripetere:
     installa `pytest`; in più l'`ENTRYPOINT` è la CLI, quindi `docker compose run --rm dashboard
     pytest` risponde `invalid choice: 'pytest'`. Il gate resta nel venv (`python -m pytest -q`,
     `python -m ruff check .`); per test in container serve un'immagine di sviluppo separata.
+19. **Un container senza font stampa quadratini**: `fonts.py` cercava solo in `%WINDIR%\Fonts`, quindi
+    su Linux ricadeva sul font incorporato di Pillow, che non ha le accentate: «Mamma e papà»
+    diventava «Mamma e pap□a» (visto sullo screen del device). Ora la ricerca è multipiattaforma,
+    `REQUIRED_GLYPHS`/`missing_glyphs()` verificano la copertura e il `Dockerfile` installa
+    `fonts-liberation` (e `fonts-dejavu-core` come riserva). Quando introduci un carattere nuovo nel
+    pannello, aggiungilo a `REQUIRED_GLYPHS` e guarda il PNG: di un quadratino nessun test se ne
+    accorge da solo.
+20. **Un font più largo non toglie pixel: diventa ellissi.** Con `fonts-dejavu-core` il container
+    disegnava il bold a ~1,30x il Segoe UI Semibold e tagliava `REG 12519` in `REG 12…`, due eventi su
+    tre e l'altezza dell'onda; l'anteprima sul PC era integra, quindi il difetto si vedeva solo sul
+    device. Tre lezioni: (a) il font dell'anteprima deve essere **lo stesso** che il container
+    installa, non uno che gli somiglia — «somiglia» lo decide la misura, non l'occhio, e il Segoe UI
+    Semibold è 89 px dove Liberation è 102 px sullo stesso testo: per questo i due TTF stanno
+    **dentro il repo** (`kindle_dashboard/render/fonts/`) e `shipped_font()` è la prima scelta di
+    `load()`; il prezzo è che ora il font è un binario da mantenere, con `OFL.txt` accanto (SIL OFL
+    1.1: licenza obbligatoria, nessuna rinominata) e `*.ttf binary` in `.gitattributes`; (b) in
+    `load()` i candidati si scorrono **per nome e poi per cartella**: con il ciclo cartella-major la
+    prima cartella di `font_directories()` (`dejavu` su Debian) vinceva su tutta la lista dei nomi;
+    (c) la diagnosi è una riga, e va fatta *prima* di incolpare il layout:
+    `python -c "from kindle_dashboard.render import fonts; print(fonts.load(19).path, fonts.load(19, bold=True).path)"`
+    deve stampare il percorso dentro il repo; se stampa `C:\WINDOWS\Fonts\…` mancano i dati del
+    pacchetto (o c'è un override attivo in `[render] font`/`font_bold`). Prima di dire «il container è
+    a posto» confronta il PNG del container con `preview.png`, non solo il `pytest` verde.
+21. **Ricostruire l'immagine non aggiorna il container che sta servendo.** I font stanno
+    nell'immagine, non nel bind mount: dopo `docker build` un container creato prima continua a
+    disegnare col font vecchio e sembra che la modifica «non abbia effetto». Diagnosi in tre righe:
+    `docker ps --format '{{.Names}} {{.Image}}'`, il digest confrontato con `docker images`, e
+    `docker exec <nome> ls /usr/share/fonts/truetype` (se manca `liberation`, il container è vecchio).
+    Rimedio: `docker rm -f <nome>` e `docker compose up -d` — `up` da solo non tocca i container che
+    vengono da un progetto compose con un altro nome (`<hash>_nome`). Il codice invece *è* aggiornato
+    dal volume `./kindle_dashboard`, e questo rende l'inganno peggiore: metà delle modifiche si vede
+    e metà no.
 
 ## §Workflow
 

@@ -47,7 +47,7 @@ station = "Genova Brignole"
 # Ottieni lo stop_id con:
 #   python -m kindle_dashboard resolve-station "Genova Brignole"
 stop_id = "it-trenitalia_04702"
-max_departures = 4
+max_departures = 3
 # Vuoto = tutte le destinazioni. Altrimenti filtra per sottostringa (case-insensitive).
 destinations = []
 # Seconda riga per treno con le fermate intermedie che corrispondono a `destinations`, con orario.
@@ -57,8 +57,10 @@ stop_details = false
 stop_priority = []
 
 [render]
-# Percorsi TTF opzionali. Vuoto = il primo font disponibile di sistema
-# (Segoe UI Semibold / Segoe UI / Arial Bold / Verdana Bold).
+# Percorsi TTF opzionali. Vuoto = Liberation Sans, che viaggia nel pacchetto
+# (`kindle_dashboard/render/fonts/`, SIL OFL 1.1): è lo stesso file che il container disegna, quindi
+# l'anteprima sul PC misura gli stessi pixel del Kindle. Indica un `.ttf` qui solo per provare un
+# font diverso: cambiano tutte le misure e vanno ricontrollate a mano.
 font = ""
 font_bold = ""
 

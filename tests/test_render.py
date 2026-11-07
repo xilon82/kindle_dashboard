@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime
 
 import pytest
+from PIL import Image, ImageDraw
 
 from kindle_dashboard.model import (
     CalEvent,
@@ -20,11 +22,21 @@ from kindle_dashboard.model import (
     Weather,
     WeatherNow,
 )
-from kindle_dashboard.render import fonts
-from kindle_dashboard.render.layout import COMPASS_POINTS, WIND_NAMES, compass, waste_day_label, wind_name
+from kindle_dashboard.render import fonts, icons
+from kindle_dashboard.render.layout import (
+    COMPASS_POINTS,
+    WIND_NAMES,
+    compass,
+    waste_day_label,
+    wind_name,
+    wrap_text,
+)
 from kindle_dashboard.render.panel import (
+    _CALENDAR_ROW_PX,
+    _TITLE_ROW_PX,
     _build_style,
     _clock_label,
+    _draw_events,
     _fit_inline,
     _icon_top,
     _inline_width,
@@ -35,6 +47,8 @@ from kindle_dashboard.render.panel import (
     _stop_line,
     _sun_segments,
     _text,
+    _title_icon,
+    _trains_height,
     _wind_segments,
     render_panel,
 )
@@ -574,3 +588,202 @@ def test_icon_is_centred_on_the_text_ink():
     top = _icon_top(font, 100, 18)
 
     assert top + 18 / 2 == pytest.approx(100 + (cap_top + cap_bottom) / 2, abs=0.5)
+
+
+def test_title_icon_yields_when_the_title_does_not_fit():
+    """L'icona di sezione è decorazione: cede prima del testo, che porta anche il "· agg."."""
+    style = _build_style((600, 800), "", "")
+    text = "DIFFERENZIATA · agg. 21:35"
+    size = style.px(22)
+    offset = size + style.px(6)
+    needed = style.title_font.getlength(text)
+
+    assert _title_icon(style, text, needed + offset - 1, "waste") == (0, 0)
+    assert _title_icon(style, text, needed + offset + 1, "waste") == (size, offset)
+
+
+def test_title_icon_is_absent_when_no_icon_is_asked():
+    style = _build_style((600, 800), "", "")
+
+    assert _title_icon(style, "CALENDARIO", 400, "") == (0, 0)
+
+
+@pytest.mark.parametrize("kind", ["calendar", "waste", "train", "partly", "storm"])
+def test_section_and_weather_icons_paint_ink(kind):
+    image = Image.new("L", (32, 32), "white")
+
+    icons.draw_icon(ImageDraw.Draw(image), kind, (0, 0, 32, 32))
+
+    assert image.getextrema()[0] < 200
+
+
+@pytest.mark.parametrize("kind", ["partly", "storm", "cloud", "rain", "drizzle", "snow", "fog"])
+def test_secondary_elements_use_a_second_tone(kind):
+    """Il secondo tono separa le forme: sole dietro la nuvola, lampo, seconda nuvola, nebbia."""
+    image = Image.new("L", (32, 32), "white")
+
+    icons.draw_icon(ImageDraw.Draw(image), kind, (0, 0, 32, 32))
+
+    levels = set(image.tobytes())
+    assert 0 in levels
+    assert 0x8C in levels
+
+
+def test_section_title_rows_are_taller_than_content_rows():
+    """Si ingrandiscono le intestazioni, non il contenuto: la riga del titolo resta la più alta."""
+    assert _TITLE_ROW_PX > _CALENDAR_ROW_PX
+
+
+def test_the_column_separator_reaches_the_trains_rule():
+    """La linea fra calendario e differenziata scende fino alla regola dei treni."""
+    style = _build_style((600, 800), "", "")
+    data = full_panel()
+    footer_top = 800 - style.margin - style.px(16)
+    trains_top = footer_top - _trains_height(style, data.departures)
+
+    image = render_panel(data, (600, 800))
+
+    band = image.crop(
+        (style.margin + style.px(240), trains_top + style.px(4), style.right, trains_top + style.px(6))
+    )
+    assert band.getextrema()[0] == 0
+
+
+def test_trains_height_counts_title_rows_stops_and_message():
+    style = _build_style((600, 720), "", "")
+    plain = Departure(scheduled=NOW, expected=NOW, line="RV 4137", destination="Roma Termini")
+    with_stops = replace(plain, stops=(CallAt(name="ROMA S.PIETRO", when=NOW),))
+
+    assert _trains_height(style, ()) == style.px(56) + style.px(28)
+    assert _trains_height(style, (plain,)) == style.px(56) + style.px(44)
+    assert _trains_height(style, (plain, with_stops)) == (
+        style.px(56) + 2 * style.px(44) + style.px(26)
+    )
+
+
+def test_trains_block_is_anchored_to_the_bottom():
+    """Con l'agenda vuota i treni stanno in fondo, non a metà pagina con il vuoto sotto."""
+    style = _build_style((600, 800), "", "")
+    footer_top = 800 - style.margin - style.px(16)
+    panel = PanelData(
+        generated_at=NOW,
+        timezone="Europe/Rome",
+        departures=(
+            Departure(scheduled=NOW, expected=NOW, line="RV 4137", destination="Roma Termini"),
+            Departure(scheduled=NOW, expected=NOW, line="RV 4142", destination="Roma Ostiense"),
+        ),
+        departures_sync=Sync(updated_at=NOW),
+    )
+
+    image = render_panel(panel, (600, 800))
+
+    band = image.crop((0, footer_top - style.px(60), 600, footer_top))
+    assert band.getextrema()[0] == 0
+
+
+class _RecordingDraw:
+    """Finto ``ImageDraw``: registra le sole chiamate a `text`, che è tutto ciò che serve qui."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[float, float, str]] = []
+
+    def text(self, xy: tuple[float, float], text: str, **_kwargs: object) -> None:
+        self.calls.append((xy[0], xy[1], text))
+
+    def summaries(self, style) -> list[tuple[float, str]]:
+        """Testi disegnati a destra dell'ora, cioè le righe del titolo dell'evento."""
+        return [(y, text) for x, y, text in self.calls if x > style.margin]
+
+    def whens(self, style) -> list[str]:
+        """Le colonne dell'ora: una per evento disegnato (stanno tutte sul margine sinistro)."""
+        return [text for x, _, text in self.calls if x == style.margin]
+
+
+def _agenda_panel(summaries: list[str]) -> PanelData:
+    events = tuple(
+        CalEvent(start=datetime(2026, 10, 31, 18, 42, tzinfo=TZ), summary=text)
+        for text in summaries
+    )
+    return PanelData(
+        generated_at=NOW,
+        timezone="Europe/Rome",
+        events=events,
+        events_sync=Sync(updated_at=NOW),
+    )
+
+
+def test_wrap_text_keeps_a_short_summary_on_one_line():
+    font = fonts.load(20)
+
+    assert wrap_text("Ale incontro yoga", font, 1000) == ("Ale incontro yoga",)
+
+
+def test_wrap_text_splits_on_a_space_and_never_inside_a_word():
+    font = fonts.load(20)
+
+    lines = wrap_text("Visita casa xmare", font, font.getlength("Visita casa"))
+
+    assert lines == ("Visita casa", "xmare")
+
+
+def test_wrap_text_never_exceeds_the_requested_lines():
+    font = fonts.load(20)
+    long_summary = "Mamma e papà a pranzo fuori con gli amici e i parenti"
+
+    assert len(wrap_text(long_summary, font, 120, lines=1)) == 1
+    assert len(wrap_text(long_summary, font, 120, lines=2)) == 2
+    assert wrap_text(long_summary, font, 120, lines=1)[0].endswith("…")
+
+
+def test_agenda_wraps_a_long_summary_instead_of_cutting_it():
+    """Due righe quando lo spazio verticale c'è: nessuna parola persa e nessuna ellissi."""
+    style = _build_style((600, 800), "", "")
+    data = _agenda_panel(["Mamma e papà a pranzo fuori"])
+    draw = _RecordingDraw()
+    when_width = max(style.px(52), style.body_font.getlength("18:42") + style.px(10))
+    line_width = style.text_font.getlength("Mamma e papà a pranzo") + 1
+
+    _draw_events(
+        draw, style, data, 0, style.px(400), style.margin, style.margin + when_width + line_width
+    )
+
+    lines = [text for _, text in draw.summaries(style)]
+    assert len(lines) == 2
+    assert not any(line.endswith("…") for line in lines)
+    assert " ".join(lines) == "Mamma e papà a pranzo fuori"
+    # La seconda riga sta sotto la prima, con il passo dichiarato.
+    assert [y for y, _ in draw.summaries(style)] == [0, style.px(26)]
+
+
+def test_agenda_falls_back_to_one_line_when_the_second_would_not_fit():
+    """Se la seconda riga non ci sta si torna all'ellissi: meglio un testo corto che un evento perso."""
+    style = _build_style((600, 800), "", "")
+    data = _agenda_panel(["Mamma e papà a pranzo fuori con gli amici"])
+    draw = _RecordingDraw()
+
+    _draw_events(draw, style, data, 0, style.px(48), style.margin, style.margin + style.px(300))
+
+    lines = [text for _, text in draw.summaries(style)]
+    assert len(lines) == 1
+    assert lines[0].endswith("…")
+    assert draw.whens(style) == ["18:42"]
+
+
+def test_agenda_does_not_lose_events_to_make_room_for_a_second_line():
+    """Con tre eventi e lo spazio contato restano tutti: il testo lungo non ruba la riga altrui."""
+    style = _build_style((600, 800), "", "")
+    data = _agenda_panel(
+        [
+            "Visita casa xmamma e papà",
+            "Mamma e papà a pranzo fuori",
+            "Ale incontro yoga",
+        ]
+    )
+    draw = _RecordingDraw()
+    bottom = style.px(150)
+
+    _draw_events(draw, style, data, 0, bottom, style.margin, style.margin + style.px(300))
+
+    assert len(draw.whens(style)) == 3
+    # Nessuna riga esce dal blocco: la seconda riga non sfonda `bottom`.
+    assert max(y for _, y, _ in draw.calls) < bottom

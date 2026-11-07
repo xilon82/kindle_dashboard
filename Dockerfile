@@ -16,9 +16,14 @@ RUN pip install --no-cache-dir --prefix=/install -e .
 # ---------- STAGE 2: runtime ----------
 FROM python:3.12-slim AS runtime
 
-# Solo librerie runtime necessarie a Pillow + tzdata
+# Solo librerie runtime necessarie a Pillow + tzdata, più font di sistema. Il pannello **spedisce**
+# Liberation Sans in `kindle_dashboard/render/fonts/` (SIL OFL 1.1, licenza accanto ai binari), così
+# anteprima sul PC e container disegnano lo stesso file; `fonts-liberation` e `fonts-dejavu-core`
+# restano come ripiego e come riserva di copertura. Senza nessun TTF Pillow userebbe il font
+# incorporato, che non ha le accentate né "×" e le disegna come quadrati.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libjpeg62-turbo zlib1g tzdata && rm -rf /var/lib/apt/lists/*
+    libjpeg62-turbo zlib1g tzdata fonts-liberation fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
 
 # Utente non-root (sicurezza)
 RUN useradd --uid 1000 --create-home --shell /bin/bash appuser
