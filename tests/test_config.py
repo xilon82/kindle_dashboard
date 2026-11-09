@@ -2,11 +2,28 @@
 
 from __future__ import annotations
 
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
 
-from kindle_dashboard.config import ICS_URL_ENV, ConfigError, load_config
+from kindle_dashboard.config import (
+    _SECTION_KEYS,
+    ICS_URL_ENV,
+    CalendarConfig,
+    ConfigError,
+    LocationConfig,
+    PanelConfig,
+    RenderConfig,
+    SeaConfig,
+    ServerConfig,
+    TrainsConfig,
+    WasteConfig,
+    WeatherConfig,
+    load_config,
+)
+
+EXAMPLE = Path(__file__).resolve().parents[1] / "config.example.toml"
 
 MINIMAL = """
 [location]
@@ -67,12 +84,25 @@ def test_explicit_ics_url_wins_over_the_environment(tmp_path, monkeypatch):
     assert config.calendar.ics_url == "https://file.example/y"
 
 
-def test_unknown_keys_in_trains_do_not_break_loading(tmp_path):
+def test_unknown_key_in_a_section_is_rejected(tmp_path):
     text = MINIMAL + '\n[[trains.board]]\nstop_id = "ignorato"\n'
 
-    config = load_config(write(tmp_path, text))
+    with pytest.raises(ConfigError, match=r"\[trains\]"):
+        load_config(write(tmp_path, text))
 
-    assert config.trains.stop_id == "it-trenitalia_04702"
+
+def test_key_in_the_wrong_section_names_the_right_one(tmp_path):
+    # La trappola vera: le chiavi di `[schedule]` scritte dentro `[server]` non le leggeva nessuno
+    # e il pannello usava i default senza dirlo.
+    text = MINIMAL + '\n[server]\nnight_start = "22:00"\n'
+
+    with pytest.raises(ConfigError, match=r"night_start sta in \[schedule\]"):
+        load_config(write(tmp_path, text))
+
+
+def test_unknown_section_is_rejected(tmp_path):
+    with pytest.raises(ConfigError, match=r"sezione sconosciuta: \[meteo\]"):
+        load_config(write(tmp_path, MINIMAL + "\n[meteo]\ndays = 3\n"))
 
 
 def test_stop_details_defaults_to_false(tmp_path):
@@ -148,3 +178,51 @@ def test_sea_enabled_must_be_boolean(tmp_path):
 
     with pytest.raises(ConfigError, match=r"\[sea\] enabled"):
         load_config(write(tmp_path, text))
+
+
+def test_location_section_is_optional(tmp_path):
+    # Senza `[location]` il pannello non ha meteo né mare, e la configurazione resta valida: è la
+    # regola delle altre sezioni. Prima non valeva, perché `name` era obbligatorio anche quando la
+    # sezione non c'era.
+    config = load_config(write(tmp_path, "[panel]\nwidth = 600\n"))
+
+    assert config.location is None
+    assert config.weather.days == 3
+
+
+def test_example_config_is_valid_and_shows_every_feature(monkeypatch):
+    """L'esempio è la vetrina del progetto: se non si carica, il README mente."""
+    # Un `KDASH_ICS_URL` nella shell di chi lancia i test accenderebbe il calendario e falserebbe
+    # le asserzioni qui sotto.
+    monkeypatch.delenv(ICS_URL_ENV, raising=False)
+
+    config = load_config(EXAMPLE)
+
+    assert config.location is not None  # meteo (e mare, dalle stesse coordinate)
+    assert config.sea.enabled is True  # il mare si vede al primo avvio
+    assert config.trains.stop_id  # tabellone configurato
+    assert config.trains.stop_details is True  # seconda riga con le fermate
+    assert config.calendar.enabled is False  # nessun URL segreto nel repo
+    assert config.waste.enabled is False
+    assert config.cache_dir == EXAMPLE.parent / "cache"
+
+
+def test_allowed_keys_match_the_dataclasses():
+    """`_SECTION_KEYS` duplica le dataclass: l'allineamento si verifica qui, non a memoria."""
+    pairs = (
+        ("panel", PanelConfig),
+        ("location", LocationConfig),
+        ("weather", WeatherConfig),
+        ("sea", SeaConfig),
+        ("calendar", CalendarConfig),
+        ("waste", WasteConfig),
+        ("trains", TrainsConfig),
+        ("render", RenderConfig),
+        ("server", ServerConfig),
+    )
+
+    for name, model in pairs:
+        # `[schedule]` e `[cache]` restano fuori: la prima non rispecchia `Schedule` (`day_seconds`
+        # arriva da `panel.refresh_seconds`), la seconda non ha una dataclass.
+        assert set(_SECTION_KEYS[name]) == {item.name for item in fields(model)}, name
+

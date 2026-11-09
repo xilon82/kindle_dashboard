@@ -216,6 +216,10 @@ Cosa aspettarsi con il `config.example.toml` (verificato su questa immagine):
 | `curl -s .../panel.png -o panel.png` | HTTP 200 e un PNG **600x720 in scala di grigi** (modalità `L`) |
 | `docker compose run ... render` | stampa `pannello 600x720 scritto in ...` e crea il file |
 
+L'esempio attiva il mare e i dettagli dei treni (`stop_details = true`), quindi il primo render fa
+più chiamate: meteo, mare, tabellone e una per treno mostrato. Senza rete il PNG si disegna lo stesso,
+con le sezioni vuote o con l'ultima cache: nessuna di queste richieste è obbligatoria.
+
 | Operazione | Comando |
 |---|---|
 | Log live | `docker compose logs -f` |

@@ -1,79 +1,109 @@
-# Copia questo file in config.toml (ignorato da git) e adatta i valori.
+# Modello di configurazione: copia questo file in `config.toml` (ignorato da git) e adatta i valori.
+#
+#   Copy-Item config.example.toml config.toml      # PowerShell
+#   cp config.example.toml config.toml             # bash
+#
+# Sezioni: panel, location, weather, sea, calendar, waste, trains, render, server, schedule, cache.
+# Una sezione **assente** spegne la parte del pannello che la usa e non è un errore; una **chiave**
+# invece deve stare nella sua sezione, altrimenti il caricamento fallisce indicando quella giusta:
+# il TOML accetterebbe tutto, e `night_start` dentro `[server]` sarebbe ignorato in silenzio.
+#
+# `config.toml` non contiene solo l'URL segreto del calendario: ci sono anche le coordinate di casa
+# e la stazione da cui parti. Resta fuori dal repo, e qui sotto i valori sono di fantasia.
 
 [panel]
-# Risoluzione nativa del Kindle 4/Touch (K4 platform): 600x800.
+# Risoluzione del Kindle 4/Touch: lo schermo è 600x800, ma l'altezza è 720 perché nel browser la
+# barra degli indirizzi ne toglie ~70 e `max-height:100vh` non è supportato: così il PNG entra
+# intero. Su un altro device prova anche (600, 800).
 width = 600
 height = 720
-# Ogni quanto la pagina si ricarica nel browser. Il PNG viene ridisegnato a ogni richiesta,
-# quindi l'orologio resta preciso anche se i dati (meteo/treni/calendario) hanno un TTL più lungo.
+# Ricarica della pagina: il PNG è ridisegnato a ogni richiesta, quindi l'orologio resta preciso
+# anche se meteo, calendario e treni hanno un intervallo di aggiornamento più lungo.
 refresh_seconds = 90
 
 [location]
+# Coordinate del meteo e — con `[sea] enabled = true` — del mare: una sezione sola, così le due
+# parti non possono indicare due punti diversi. Assente = pannello senza meteo e senza mare.
 name = "Genova"
 latitude = 44.4072
 longitude = 8.9476
 
 [weather]
+# Giorni di previsione da richiedere (1-7): la striscia ne disegna al massimo tre.
 days = 3
+# Fuso di orari, calendario e treni. Su Windows l'identificatore richiede il pacchetto `tzdata`
+# (già fra le dipendenze): senza, `zoneinfo` non trova "Europe/Rome".
 timezone = "Europe/Rome"
 
 [sea]
-# Condizioni del mare dalle stesse coordinate di [location] (Open-Meteo Marine API, nessuna chiave):
-# stato in scala Douglas, altezza d'onda e direzione di provenienza. false = pannello senza mare.
-enabled = false
-# Giorni di previsione: si accoppiano **per data** alle giornate del meteo, non per posizione.
+# Condizioni del mare dalle stesse coordinate di `[location]` (Open-Meteo Marine, nessuna API key):
+# stato in scala Douglas, altezza d'onda, temperatura dell'acqua e direzione del vento.
+enabled = true
+# Giorni di mare nella striscia delle previsioni: si accoppiano **per data** alle giornate del
+# meteo, non per posizione, quindi un giorno mancante non sposta le colonne.
 days = 3
 
 [calendar]
-# Google Calendar > Impostazioni calendario > "Indirizzo segreto in formato iCal".
-# Vuoto = riquadro calendario non configurato. Si può fornire anche via KDASH_ICS_URL.
+# Google Calendar > Impostazioni calendario > "Indirizzo segreto in formato iCal":
+#   ics_url = "https://calendar.google.com/calendar/ical/<id>/private-<token>/basic.ics"
+# Vuoto = calendario non configurato. L'URL è una credenziale, quindi può arrivare anche
+# dall'ambiente (KDASH_ICS_URL), dove non finisce su disco: l'ambiente vince se questa chiave è vuota.
 ics_url = ""
+# Quanti eventi disegnare e su quanti giorni guardare avanti.
 max_events = 4
 days_ahead = 7
 
 [waste]
 # Calendario della raccolta differenziata: un iCal **pubblico** con un evento all-day per ogni
-# giorno di raccolta e il materiale nel titolo (es. "Umido"). Se il calendario non è tuo, in
-# Google Calendar > Impostazioni > "Indirizzo pubblico in formato iCal" trovi l'URL `.../public/basic.ics`.
+# giorno di raccolta e il materiale nel titolo ("Umido", "Secco", "Plastica", "Carta"):
+#   ics_url = "https://calendar.google.com/calendar/ical/<id>/public/basic.ics"
 # Vuoto = la colonna destra non viene disegnata e il calendario eventi resta a tutta larghezza.
 ics_url = ""
-# Giorni mostrati: oggi, domani e i successivi. I giorni senza raccolta compaiono come "niente".
+# Oggi, domani e il giorno dopo: i giorni senza raccolta compaiono come "niente".
 days = 3
 
 [trains]
 base_url = "https://api.transitous.org"
-# Partenze mostrate: la stazione di partenza (una sola per pannello).
-station = "Genova Brignole"
-# Ottieni lo stop_id con:
+# Stazione del tabellone: una sola per pannello (Transitous, nessuna API key). Lo `stop_id` si
+# ricava con:
 #   python -m kindle_dashboard resolve-station "Genova Brignole"
+station = "Genova Brignole"
 stop_id = "it-trenitalia_04702"
+# Partenze mostrate (1-20).
 max_departures = 3
-# Vuoto = tutte le destinazioni. Altrimenti filtra per sottostringa (case-insensitive).
+# Filtro per sottostringa sull'etichetta commerciale del treno, case-insensitive; vuoto = tutte.
+#   destinations = ["MILANO"]
 destinations = []
-# Seconda riga per treno con le fermate intermedie che corrispondono a `destinations`, con orario.
-# Costa una richiesta HTTP per treno mostrato.
-stop_details = false
-# Fermate da non sacrificare quando la riga non basta (il resto viene ridotto).
+# Seconda riga per treno con le fermate che corrispondono a `destinations` (vuoto = tutte quelle
+# che entrano nella riga) e l'orario previsto. Costa **una richiesta HTTP per treno mostrato**:
+# con max_departures = 3 sono tre richieste a ogni aggiornamento dei treni.
+stop_details = true
+# Fermate da non sacrificare quando la riga non basta: le altre vengono ridotte.
+#   stop_priority = ["S.PIETRO", "TRASTEVERE"]
 stop_priority = []
 
 [render]
-# Percorsi TTF opzionali. Vuoto = Liberation Sans, che viaggia nel pacchetto
-# (`kindle_dashboard/render/fonts/`, SIL OFL 1.1): è lo stesso file che il container disegna, quindi
-# l'anteprima sul PC misura gli stessi pixel del Kindle. Indica un `.ttf` qui solo per provare un
-# font diverso: cambiano tutte le misure e vanno ricontrollate a mano.
+# Percorsi TTF alternativi a Liberation Sans, che viaggia nel pacchetto
+# (`kindle_dashboard/render/fonts/`): è lo stesso file che disegna il container, quindi anteprima e
+# Kindle misurano gli stessi pixel. Un `.ttf` qui serve solo a provare un font diverso: cambiano
+# tutte le misure e le regole di cedimento dei testi vanno ricontrollate a mano.
 font = ""
 font_bold = ""
 
 [server]
+# `0.0.0.0` = raggiungibile dal Kindle sulla stessa rete. Il Kindle 4 ha solo Wi-Fi 2.4 GHz.
 host = "0.0.0.0"
 port = 8787
 
 [schedule]
-# Fascia notturna: ricarica più rada e scritta NOTTE al posto dell'orario.
-# L'intervallo non supera mai il confine successivo: alle 06:29 si ricarica subito, non fra un'ora.
+# Fascia notturna: ricarica più rada e `NOTTE` al posto dell'orario, che sarebbe vecchio fino a
+# un'ora. L'intervallo non supera mai il confine successivo: alle 06:29 si ricarica subito.
+# Queste tre chiavi stanno **qui**, non in `[server]`: fuori sezione il caricamento fallisce.
 night_start = "23:00"
 night_end = "06:30"
 night_refresh_seconds = 3600
 
 [cache]
+# Ultimo payload buono per sezione, usato come fallback quando una fonte non risponde. Il percorso
+# è relativo a questo file.
 dir = "cache"

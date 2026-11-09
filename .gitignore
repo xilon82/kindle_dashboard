@@ -14,3 +14,7 @@ preview.png
 preview-night.png
 panel.png
 cache/
+# L'anteprima del README è versionata: i pattern qui sopra valgono a ogni livello, quindi senza
+# questa riga anche `docs/preview.png` verrebbe ignorato (e il README mostrerebbe un'immagine
+# mancante solo dopo il clone, non in locale dove il file esiste).
+!docs/preview.png

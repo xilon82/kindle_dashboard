@@ -139,6 +139,12 @@ Errori realmente accaduti qui, da non ripetere:
     vengono da un progetto compose con un altro nome (`<hash>_nome`). Il codice invece *è* aggiornato
     dal volume `./kindle_dashboard`, e questo rende l'inganno peggiore: metà delle modifiche si vede
     e metà no.
+22. **Una chiave di configurazione nella sezione sbagliata si ignorava in silenzio**: `night_start`
+    dentro `[server]` non la leggeva nessuno (e i default erano identici, quindi non si notava
+    nulla). Ora `_SECTION_KEYS` elenca le chiavi ammesse per sezione e `load_config()` fallisce
+    indicando quella giusta; `config.example.toml` viene caricato da un test, così una chiave nuova
+    dimenticata nell'esempio fa rosso il gate. Quando aggiungi un'opzione aggiorna dataclass,
+    `_SECTION_KEYS`, `config.example.toml` e la tabella in `README.md`: quattro posti, non tre.
 
 ## §Workflow
 
@@ -149,6 +155,10 @@ Errori realmente accaduti qui, da non ripetere:
 - Non creare commit "di servizio" per far passare il linter: prima si sistema, poi si chiede.
 - Non scrivere sul Kindle (`G:\`) senza motivo: durante lo sviluppo solo `deploy.ps1 -DryRun`.
 - Dopo una modifica al layout rigenera `preview.png` e **guardalo**: i difetti visivi non li vede ruff.
+- **L'immagine del README è `docs/preview.png` e contiene solo dati inventati**: si rigenera con
+  `python docs/make_preview.py`, che non legge `config.toml` e non chiama la rete. `preview.png` è
+  invece quella personale (calendario compreso) e resta ignorata da git: non copiarla mai nella prima,
+  e non incollare screenshot del pannello vero nella documentazione.
 - **Se cambi fonti, renderer o test, aggiorna anche `docs/technical-walkthrough.md`**: è un documento
   narrato e invecchia in silenzio (elencava `Totale 129` test, aveva due `### 4.4` e un blocco di
   parametri Open-Meteo senza l'umidità). E niente conteggi fissi nei documenti: cambiano a ogni

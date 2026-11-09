@@ -120,6 +120,35 @@ class Config:
         return self.weather.timezone
 
 
+# Chiavi ammesse per sezione. Non è documentazione, è validazione: il TOML accetta qualunque
+# chiave, e una chiave nella sezione sbagliata (`night_start` dentro `[server]`) verrebbe letta da
+# nessuno e ignorata in silenzio — il pannello userebbe i default senza dirlo. `_check_keys` la
+# trasforma in un errore con il nome della sezione giusta.
+_SECTION_KEYS: dict[str, tuple[str, ...]] = {
+    "panel": ("width", "height", "refresh_seconds"),
+    "location": ("name", "latitude", "longitude"),
+    "weather": ("days", "timezone"),
+    "sea": ("enabled", "days"),
+    "calendar": ("ics_url", "max_events", "days_ahead"),
+    "waste": ("ics_url", "days"),
+    "trains": (
+        "base_url",
+        "station",
+        "stop_id",
+        "max_departures",
+        "destinations",
+        "stop_details",
+        "stop_priority",
+    ),
+    "render": ("font", "font_bold"),
+    "server": ("host", "port"),
+    # `day_seconds` non è una chiave: viene da `panel.refresh_seconds`, così orologio e ricarica
+    # della pagina leggono lo stesso numero.
+    "schedule": ("night_start", "night_end", "night_refresh_seconds"),
+    "cache": ("dir",),
+}
+
+
 def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
     """Legge il file di configurazione; i percorsi relativi sono risolti rispetto al file."""
     config_path = Path(path)
@@ -134,6 +163,15 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{config_path}: TOML non valido ({exc})") from exc
 
+    unknown_sections = sorted(set(data) - set(_SECTION_KEYS))
+    if unknown_sections:
+        raise ConfigError(
+            "sezione sconosciuta: "
+            + ", ".join(f"[{name}]" for name in unknown_sections)
+            + " — le sezioni ammesse sono "
+            + ", ".join(f"[{name}]" for name in _SECTION_KEYS)
+        )
+
     panel = _section(data, "panel")
     weather = _section(data, "weather")
     sea = _section(data, "sea")
@@ -147,7 +185,9 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
     location_table = _section(data, "location")
 
     location = None
-    if location_table is not None:
+    # `[location]` è opzionale: senza di lei il pannello non ha meteo né mare, e questo non è un
+    # errore (una sezione assente spegne quella parte). Presenza della tabella con `name` vuoto sì.
+    if "location" in data:
         name = _str(location_table, "name", "", where="location").strip()
         if not name:
             raise ConfigError("[location] name è obbligatorio quando [location] è presente")
@@ -233,7 +273,29 @@ def _section(data: dict[str, Any], name: str) -> dict[str, Any]:
         return {}
     if not isinstance(value, dict):
         raise ConfigError(f"[{name}] deve essere una tabella TOML")
+    _check_keys(value, name)
     return value
+
+
+def _check_keys(table: dict[str, Any], where: str) -> None:
+    """Rifiuta le chiavi sconosciute e quelle messe nella sezione sbagliata."""
+    allowed = _SECTION_KEYS[where]
+    problems: list[str] = []
+    for key in table:
+        if key in allowed:
+            continue
+        owners = [name for name in _sections_for(key) if name != where]
+        if owners:
+            problems.append(f"{key} sta in " + " o ".join(f"[{name}]" for name in owners))
+        else:
+            problems.append(f"chiave sconosciuta: {key}")
+    if problems:
+        raise ConfigError(f"[{where}] " + "; ".join(problems))
+
+
+def _sections_for(key: str) -> tuple[str, ...]:
+    """Sezioni che ammettono ``key``: serve a suggerire quella giusta nell'errore."""
+    return tuple(name for name, keys in _SECTION_KEYS.items() if key in keys)
 
 
 def _str(section: dict[str, Any], key: str, default: str, *, where: str) -> str:

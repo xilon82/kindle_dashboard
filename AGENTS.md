@@ -101,10 +101,15 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
 
 ### Configurazione
 
-TOML con sezioni `panel`, `location`, `weather`, `calendar`, `trains`, `render`, `server`, `cache`.
-`load_config()` restituisce dataclass immutabili; un valore non valido produce `ConfigError` con il
-nome della sezione coinvolta. `calendar.ics_url` può arrivare da `KDASH_ICS_URL` solo se il file non
-lo specifica. Una sezione assente disattiva la relativa parte del pannello, non è un errore.
+TOML con sezioni `panel`, `location`, `weather`, `sea`, `calendar`, `waste`, `trains`, `render`,
+`server`, `schedule`, `cache`. `load_config()` restituisce dataclass immutabili; un valore non valido
+produce `ConfigError` con il nome della sezione coinvolta. `calendar.ics_url` può arrivare da
+`KDASH_ICS_URL` solo se il file non lo specifica. Una **sezione assente** disattiva la relativa parte
+del pannello e non è un errore (`[location]` compresa); una **chiave** invece è validata: `_SECTION_KEYS`
+elenca quelle ammesse per sezione, quindi una chiave sconosciuta o scritta nella sezione sbagliata
+(`night_start` dentro `[server]`) fa fallire il caricamento indicando dove va. `tests/test_config.py`
+tiene allineati `_SECTION_KEYS`, le dataclass, `config.example.toml` (che carica davvero) e la tabella
+in `README.md`.
 
 ## Come estendere
 
@@ -130,7 +135,9 @@ lo specifica. Una sezione assente disattiva la relativa parte del pannello, non 
    resta, così i treni non restano a metà pagina quando gli eventi sono pochi. Una sezione che si
    riconosce dalle icone può fare a meno del titolo e usare `_section_rule` (solo separatore): la
    striscia meteo lo fa e guadagna una riga.
-4. Aggiorna `tests/test_render.py` e rigenera `preview.png`.
+4. Aggiorna `tests/test_render.py`, rigenera `preview.png` per la verifica visiva e — se il layout
+   cambia in modo visibile — anche `docs/preview.png`, quello del README, con
+   `python docs/make_preview.py` (dati inventati, vedi la tabella dei file).
 5. Il blocco agenda (`_draw_agenda`) ha due colonne solo quando `PanelData.waste` non è `None`: le
    larghezze vengono da `_EVENTS_SHARE` e `_COLUMN_GUTTER_PX`, non da pixel scelti a occhio.
 6. **Il riassunto di un evento va a capo su due righe** (`layout.wrap_text`, passo
@@ -146,8 +153,10 @@ lo specifica. Una sezione assente disattiva la relativa parte del pannello, non 
    diverso da zero.
 
 ### Nuova opzione di configurazione
-Aggiungila alla dataclass, a `config.example.toml` e alla tabella in `README.md`: le tre cose devono
-restare allineate.
+Aggiungila alla dataclass, all'elenco `_SECTION_KEYS`, a `config.example.toml` e alla tabella in
+`README.md`: le quattro cose devono restare allineate. Se la dimentichi in `_SECTION_KEYS` il
+caricamento la rifiuta (e il test sull'esempio se ne accorge subito), se la dimentichi nell'esempio
+`test_example_config_is_valid_and_shows_every_feature` fallisce.
 
 ## Test e verifica
 
@@ -196,6 +205,7 @@ Ancora da confermare: comportamento della batteria con la pagina aperta per ore.
 | `docs/technical-walkthrough.md` | chi studia il progetto: percorso tecnico narrato, con i bug reali |
 | `docs/venv.md` | chi sviluppa: cosa isola un venv, come crearlo, vantaggi e limiti |
 | `docs/docker.md` | chi fa deploy: scelte dell'immagine, volumi, comandi, rollback, trappole |
+| `docs/preview.png` + `docs/make_preview.py` | chi scrive il README: anteprima versionata, rigenerata offline con dati inventati (`preview.png` invece è quella personale, ignorata da git) |
 | `config.example.toml` | utente: modello di configurazione commentato |
 | `tests/` | sviluppatori: comportamento atteso, da aggiornare con le modifiche |
 | `kindle/` | deploy: estensione KUAL + script host |

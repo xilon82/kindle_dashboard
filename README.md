@@ -6,6 +6,12 @@ differenziata** e **partenze dei treni** vengono raccolti sul PC e disegnati in 
 Il Kindle non esegue codice del progetto: scarica il PNG via WiFi e lo mostra a schermo intero con
 FBInk. Un pannello non deve mai bloccarsi, quindi ogni sezione ha un fallback.
 
+![Il pannello sul Kindle](docs/preview.png)
+
+L'anteprima qui sopra usa **dati inventati** — eventi, località, stazione, temperature e partenze —
+perché serve a mostrare il layout, non a raccontare il calendario di chi lo usa. Si rigenera
+offline con `python docs/make_preview.py`: nessuna rete, nessun `config.toml`.
+
 ## Requisiti
 
 - PC acceso con **Python 3.11+** (verificato su Windows 11, Python 3.13) — *oppure* **Docker + Compose** (vedi [Avvio con Docker](#avvio-con-docker-alternativa-al-venv)).
@@ -36,22 +42,25 @@ Perché il venv, come ricrearlo, vantaggi e limiti rispetto a Docker: [docs/venv
 Copy-Item config.example.toml config.toml
 ```
 
-`config.toml` è ignorato da git perché contiene l'URL iCal segreto del calendario.
+`config.toml` è ignorato da git: contiene l'URL iCal segreto del calendario, ma anche le coordinate di
+casa e la stazione da cui parti. Una chiave sconosciuta (o una chiave nella sezione sbagliata) fa
+fallire l'avvio con un messaggio che indica la sezione giusta, invece di essere ignorata in silenzio.
 
 | Sezione | Chiave | Default | Significato |
 |---|---|---|---|
-| `panel` | `width` / `height` | 600 / 800 | risoluzione nativa del Kindle |
+| `panel` | `width` / `height` | 600 / 720 | risoluzione del PNG: lo schermo del Kindle è 600x800, ma nel browser la barra degli indirizzi ne toglie ~70 |
 | `panel` | `refresh_seconds` | 90 | ogni quanto la pagina si ricarica: il PNG è ridisegnato a ogni richiesta, quindi l'orologio resta preciso |
 | `location` | `name`, `latitude`, `longitude` | — | posizione per il meteo (assente = niente meteo) |
 | `weather` | `days` | 3 | giorni di previsione disegnati (max 7); il vento è in **nodi** |
 | `weather` | `timezone` | `Europe/Rome` | fuso usato per orari, calendario e treni |
-| `sea` | `enabled` | `false` | condizioni del mare dalle stesse coordinate di `[location]`: stato, altezza d'onda e temperatura dell'acqua |
+| `sea` | `enabled` | `false` | condizioni del mare dalle stesse coordinate di `[location]`: stato, altezza d'onda e temperatura dell'acqua (`config.example.toml` lo attiva) |
 | `sea` | `days` | 3 | giorni di mare nella striscia delle previsioni, accoppiati **per data** al meteo |
 | `calendar` | `ics_url` | vuoto | URL iCal segreto di Google Calendar |
 | `calendar` | `max_events`, `days_ahead` | 4, 7 | quanti eventi e su quanti giorni |
 | `waste` | `ics_url` | vuoto | URL iCal **pubblico** del calendario della raccolta differenziata (vuoto = colonna destra assente) |
 | `waste` | `days` | 3 | giorni mostrati nella colonna: oggi, domani e il successivo |
-| `trains` | `station`, `stop_id` | — | stazione del tabellone (assente = niente treni) |
+| `trains` | `base_url` | `https://api.transitous.org` | servizio usato per le partenze |
+| `trains` | `station`, `stop_id` | — | stazione del tabellone (assente = niente treni); lo `stop_id` si ricava con `python -m kindle_dashboard resolve-station "..."` |
 | `trains` | `max_departures` | 3 | partenze mostrate |
 | `trains` | `destinations` | `[]` | filtro per sottostringa (vuoto = tutte) |
 | `trains` | `stop_details` | `false` | seconda riga per treno con le fermate che corrispondono a `destinations` (una richiesta HTTP per treno) |

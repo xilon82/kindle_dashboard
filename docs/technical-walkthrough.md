@@ -603,6 +603,14 @@ night_refresh_seconds = 3600
 `night_start == night_end` è rifiutato con `ConfigError` (sarebbe ambiguo) e il formato è validato
 come `HH:MM`.
 
+Le tre chiavi di `[schedule]` sono l'esempio concreto di un errore silenzioso: messe in `[server]`
+(capitava, perché anche `host` e `port` sono lì) il TOML le accettava, `_section` leggeva solo
+`[schedule]` e il pannello applicava i default senza dirlo. Per questo `_SECTION_KEYS` elenca le chiavi
+ammesse per sezione: una chiave sconosciuta, o una chiave nota di un'altra sezione, producono
+`ConfigError` con l'indicazione di dove va. La distinzione che tiene il sistema usabile è fra **sezione
+assente** (spegne una parte del pannello, non è un errore) e **chiave sbagliata** (errore, perché lì
+l'intenzione era scrivere qualcosa che non ha effetto).
+
 ---
 
 ## 8. Il lato device
@@ -669,7 +677,7 @@ I payload veri stanno in `tests/fixtures/` (`weather_openmeteo.json`, `marine_op
 |---|---|
 | `test_render.py` | dimensioni/mode, determinismo, sezioni vuote, troncamenti, priorità fermate, `NOTTE`, segmenti testo+icona, riga dei dettagli (ordine e cedimento), punti cardinali e nomi dei venti |
 | `test_schedule.py` | confini 22:59/23:00 e 06:29/06:30, mezzanotte, clamp, intervalli |
-| `test_config.py` | valori, errori parlanti, override da ambiente, `stop_details`, `[schedule]`, `[sea]` |
+| `test_config.py` | valori, errori parlanti, override da ambiente, `stop_details`, `[schedule]`, `[sea]`, chiave sconosciuta o nella sezione sbagliata, `config.example.toml` che si carica davvero, allineamento fra `_SECTION_KEYS` e dataclass |
 | `test_sea.py` | parsing Open-Meteo Marine, scala Douglas (forza e parola), campi mancanti, coordinate della richiesta |
 | `test_weather.py` | parsing Open-Meteo (nodi, direzione del vento, umidità), campi mancanti, codici WMO, unità e campi della richiesta |
 | `test_trains.py` | partenze passate, ritardo, binario, cancellazioni, filtro, fermate da `/trip` |
