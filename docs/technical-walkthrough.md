@@ -189,13 +189,19 @@ daily=wave_height_max
 timezone=Europe/Rome, forecast_days=3
 ```
 
-`parse()` produce `SeaNow` + `SeaDay[]`. Lo **stato del mare** è la scala Douglas, in una tabella
-sola con tre letture: `state_force` (il grado, `F3` nella striscia), `state_label` (la parola,
-`mosso`, usata nell'header dove lo spazio c'è) e `state_kind` (la famiglia di glifo: `sea_calm`,
-`sea_slight`, `sea_moderate`, `sea_rough`). Le soglie sono in metri di altezza d'onda significativa
-(0.1 / 0.5 / 1.25 / 2.5 / 4 / 6 / 9) e si confrontano con l'altezza **arrotondata al decimale
-mostrato**: senza quel `round`, `0.48 m` verrebbe scritto `0.5m` e classificato "quasi calmo",
-mentre `0.50 m` è "poco mosso" — due stati diversi dietro lo stesso numero.
+`parse()` produce `SeaNow` + `SeaDay[]`. Lo **stato del mare** è la scala Douglas ufficiale (gradi
+0-9), in una tabella sola con tre letture: `state_force` (il grado, `F3` nella striscia),
+`state_label` (la parola, `mosso`, usata nell'header dove lo spazio c'è) e `state_kind` (la famiglia
+di glifo: `sea_calm`, `sea_slight`, `sea_moderate`, `sea_rough`). Le soglie sono in metri di altezza
+d'onda significativa — 0 / 0,10 / 0,50 / 1,25 / 2,50 / 4 / 6 / 9 / 14 — e si confrontano con
+l'altezza **del dato**: le fasce dei primi gradi sono larghe 10 e 40 cm, meno di un passo di
+visualizzazione, quindi arrotondare renderebbe "quasi calmo" irraggiungibile (0,08 m si scrive
+`0.1m`) e sposterebbe i primi 5 cm di ogni fascia nel grado superiore (0,46 m letto "mosso").
+L'arrotondamento resta solo nella stampa, dove serve: sotto i 10 cm compaiono i centimetri
+(`8cm`), perché il modello lavora a passi da 2 cm e `0.1m` uscirebbe dalla fascia "quasi calmo".
+Gli estremi seguono il bollettino, che li scrive aperti, ma con il fondo scala del modello: "calmo"
+arriva a 2 cm inclusi (Open-Meteo Marine non scende sotto 0,02 m, quindi il suo minimo *è* lo
+"0 m" della tabella) e "tempestoso" scatta oltre 14 m, mentre 14,00 m chiude ancora "molto grosso".
 
 Perché due grafie: nella colonna da 185 px `F3` costa 15 px contro i 75 di `poco mosso`, ed è
 l'unico modo per tenere insieme altezza d'onda, vento e direzione. Sulla riga grande dell'header,
@@ -698,7 +704,7 @@ subito (era già successo). Il totale lo stampa `python -m pytest -q`.
 | `ZoneInfoNotFoundError: 'Europe/Rome'` | Windows non ha il database IANA | dipendenza `tzdata` |
 | I test non importano il package | pytest non aggiunge la root al `sys.path` | `pythonpath = ["."]` |
 | L'ora si sovrappone al nome del treno | colonne a pixel fissi | larghezze da `getlength` |
-| `0.5m` mostrato come "quasi calmo" | soglie Douglas sul valore pieno, numero arrotondato a 1 decimale | classificazione sull'altezza arrotondata (`_state`) |
+| `0.5m` accanto a "quasi calmo" e gradi 8-9 assenti | tabella Douglas sfasata di un grado rispetto a quella ufficiale, classificata sull'altezza arrotondata | soglie 0,10 / 0,50 / 1,25 / 2,50 / 4 / 6 / 9 / 14 sul valore del dato, centimetri sotto i 10 cm (`_state`, `height_label`) |
 | `Image support is disabled in this FBInk build` | build MINIMAL di KOReader | `eips`, poi il browser |
 | `eips` esce con 0 e lo schermo resta bianco | il firmware non rende i PNG | passaggio al browser |
 | Schermo bianco + USB sparita + riavvio | framework fermato = niente modalità archivio | non fermare il framework |

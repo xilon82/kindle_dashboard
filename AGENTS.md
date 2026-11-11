@@ -53,6 +53,13 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    divergere e si legge subito a quale punto cardinale il nome è legato. Il mare viene dalle
    coordinate di `[location]`, non da una sezione con coordinate proprie, e la sua
    classificazione (forza Douglas, parola, glifo) è una tabella sola in `sources/marine.py`.
+   I gradi sono quelli ufficiali (0-9, soglie 0,10 / 0,50 / 1,25 / 2,50 / 4 / 6 / 9 / 14 m) e si
+   classificano sull'altezza **del dato**, non su quella arrotondata: le prime fasce sono larghe
+   10 e 40 cm, quindi un `round` renderebbe irraggiungibile «quasi calmo» e sposterebbe 5 cm per
+   fascia nel grado superiore. Gli estremi stanno fuori tabella: «calmo» fino a 2 cm inclusi (il
+   modello non scende sotto 0,02 m, quindi il suo fondo scala è lo «0 m» della tabella) e
+   «tempestoso» oltre 14 m. L'arrotondamento resta nella sola stampa, e sotto i 10 cm
+   `height_label` mostra i centimetri (`8cm`) perché il modello lavora a passi da 2 cm.
 9. **Le righe miste testo+icona passano da `_draw_inline`**: i pezzi sono `_Segment` con `required`
    falso quando possono cedere (temperatura dell'acqua, nome del vento, frecce di alba/tramonto).
    Larghezze sempre da `font.getlength`, mai pixel scelti a occhio, e le icone si allineano al

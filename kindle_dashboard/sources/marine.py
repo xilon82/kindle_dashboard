@@ -20,19 +20,27 @@ API_URL = "https://marine-api.open-meteo.com/v1/marine"
 _CURRENT_FIELDS = "wave_height,sea_surface_temperature"
 _DAILY_FIELDS = "wave_height_max"
 
-# Scala Douglas: soglia superiore in metri, forza, descrizione italiana e famiglia di glifo.
-# Una sola tabella e tre letture (forza, parola, glifo): la striscia usa la forza perché in una
-# colonna da 185 px "F3" costa 15 px contro i 75 di "poco mosso".
+# Scala Douglas ufficiale (gradi 0-9): soglia inferiore in metri, grado, parola e famiglia di
+# glifo. Una sola tabella e tre letture (forza, parola, glifo): la striscia usa la forza perché in
+# una colonna da 185 px "F3" costa 15 px contro i 75 di "poco mosso". Il confronto è ">=", quindi
+# 0.50 m è già "mosso" (F3) e 0.10 m è già "poco mosso" (F2). I due estremi stanno fuori tabella
+# perché il bollettino li scrive aperti: oltre 14 m c'è il grado 9, e il grado 0 è "fino a 2 cm
+# inclusi" — Open-Meteo Marine non scende sotto 0.02 m, quindi il fondo scala del modello *è* il
+# suo "0 m".
 _STATES: tuple[tuple[float, int, str, str], ...] = (
-    (0.1, 0, "calmo", "sea_calm"),
-    (0.5, 1, "quasi calmo", "sea_calm"),
-    (1.25, 2, "poco mosso", "sea_slight"),
-    (2.5, 3, "mosso", "sea_moderate"),
-    (4.0, 4, "molto mosso", "sea_rough"),
-    (6.0, 5, "agitato", "sea_rough"),
-    (9.0, 6, "molto agitato", "sea_rough"),
+    (0.10, 2, "poco mosso", "sea_slight"),
+    (0.50, 3, "mosso", "sea_moderate"),
+    (1.25, 4, "molto mosso", "sea_rough"),
+    (2.50, 5, "agitato", "sea_rough"),
+    (4.00, 6, "molto agitato", "sea_rough"),
+    (6.00, 7, "grosso", "sea_rough"),
+    (9.00, 8, "molto grosso", "sea_rough"),
 )
-_ROUGHEST = (7, "grosso", "sea_rough")
+_CALM = (0, "calmo", "sea_calm")
+_CALM_TO_M = 0.02
+_QUASI_CALM = (1, "quasi calmo", "sea_calm")
+_TEMPESTUOUS = (9, "tempestoso", "sea_rough")
+_TEMPESTUOUS_FROM_M = 14.0
 
 
 def state_force(height: float) -> int:
@@ -41,7 +49,7 @@ def state_force(height: float) -> int:
 
 
 def state_label(height: float) -> str:
-    """Descrizione italiana dello stato del mare (scala Douglas)."""
+    """Descrizione italiana dello stato del mare (scala Douglas ufficiale)."""
     return _state(height)[1]
 
 
@@ -51,21 +59,37 @@ def state_kind(height: float) -> str:
 
 
 def height_label(height: float) -> str:
-    """Altezza d'onda compatta per lo schermo: ``0.6m``."""
+    """Altezza d'onda compatta per lo schermo: ``0.6m``, ma ``8cm`` sotto i 10 cm.
+
+    Le fasce dei gradi 1 e 2 sono larghe 10 e 40 cm, quindi un decimale in metri basta da 0,10 m in
+    su; sotto, il modello lavora a passi da 2 cm e ``0.08 m`` stampato ``0.1m`` uscirebbe dalla
+    fascia "quasi calmo" (< 0,10 m). In centimetri il numero resta esatto e costa due caratteri in
+    meno, che nella colonna da 185 px sono la direzione del vento.
+    """
+    if height < 0.10:
+        return f"{round(height * 100)}cm"
     return f"{height:.1f}m"
 
 
 def _state(height: float) -> tuple[int, str, str]:
-    """Classifica sull'altezza arrotondata a un decimale, la stessa che si legge sul pannello.
+    """Classifica l'altezza del dato, non quella stampata sul pannello.
 
-    Altrimenti ``0.48 m`` verrebbe scritto ``0.5m`` e classificato "quasi calmo", mentre ``0.50 m``
-    è "poco mosso": due stati diversi dietro lo stesso numero mostrato.
+    Le fasce dei gradi 0-2 sono larghe 10 e 40 cm, meno di un passo di visualizzazione:
+    arrotondando, "quasi calmo" sarebbe irraggiungibile (0,08 m si scrive ``0.1m``) e i primi
+    5 cm di ogni fascia finirebbero nel grado superiore (0,46 m letto "mosso"). Il grado 0 arriva
+    a 0,02 m inclusi perché è il minimo che il modello sa rappresentare: chiamarlo "calmo" è più
+    onesto che far apparire "quasi calmo" l'unico valore di fondo scala.
     """
-    shown = round(height, 1)
-    for limit, force, label, kind in _STATES:
-        if shown < limit:
-            return force, label, kind
-    return _ROUGHEST
+    if height <= _CALM_TO_M:
+        return _CALM
+    if height > _TEMPESTUOUS_FROM_M:
+        return _TEMPESTUOUS
+    chosen = _QUASI_CALM
+    for lower, force, label, kind in _STATES:
+        if height < lower:
+            break
+        chosen = (force, label, kind)
+    return chosen
 
 
 def fetch_payload(

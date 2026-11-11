@@ -575,9 +575,19 @@ def test_sea_day_row_uses_the_douglas_force():
 
     segments = _sea_day_segments(day, 17.3, 13)
 
-    assert segments[0].icon == "sea_moderate"
-    assert [segment.text for segment in segments if segment.text] == ["F3", "1.3m", "17 kn", "NNE"]
+    # 1.3 m è "molto mosso" (F4): la fascia va da 1.25 a 2.50 m.
+    assert segments[0].icon == "sea_rough"
+    assert [segment.text for segment in segments if segment.text] == ["F4", "1.3m", "17 kn", "NNE"]
     assert segments[-1].required is False
+
+
+def test_flat_sea_shows_centimetres_and_is_quasi_calmo():
+    sea = Sea(now=SeaNow(wave_height=0.08, water_temperature=20.6), days=())
+
+    segments = _sea_segments(sea)
+
+    assert segments[0].icon == "sea_calm"
+    assert [segment.text for segment in segments if segment.text][:2] == ["quasi calmo", "8cm"]
 
 
 def test_icon_is_centred_on_the_text_ink():

@@ -127,16 +127,21 @@ Con `sea.enabled = true` il pannello aggiunge le condizioni del mare dalle **ste
 `[location]`** (Open-Meteo Marine API, nessuna chiave):
 
 - nella riga del vento, nella colonna di destra: stato in parole, altezza d'onda e temperatura
-  dell'acqua (`poco mosso 0.6m 21°`);
-- sotto ciascuna delle tre giornate: **forza Douglas** (`F3`), altezza d'onda, vento massimo in nodi
-  e direzione (`F3 1.3m 21 kn NNE`). La forza costa 15 px contro i 75 di `poco mosso`: è ciò che fa
+  dell'acqua (`mosso 0.6m 21°`);
+- sotto ciascuna delle tre giornate: **forza Douglas** (`F4`), altezza d'onda, vento massimo in nodi
+  e direzione (`F4 1.3m 21 kn NNE`). La forza costa 15 px contro i 75 di `poco mosso`: è ciò che fa
   entrare altezza, unità e direzione nella colonna da 185 px.
 
-La scala Douglas è quella dei bollettini italiani: 0 calmo, 1 quasi calmo, 2 poco mosso, 3 mosso,
-4 molto mosso, 5 agitato, 6 molto agitato, 7 grosso. La classificazione usa l'altezza arrotondata al
-decimale mostrato, così `0.5m` non può comparire come "quasi calmo". Se la fonte cade il pannello
-mostra `mare n.d.` senza occupare una riga in più, e il footer segnala che alcuni dati vengono dalla
-cache. Per una località lontana dal mare conviene lasciare la sezione spenta.
+La scala Douglas è quella ufficiale dei bollettini, con le soglie a 0,10 / 0,50 / 1,25 / 2,50 / 4 /
+6 / 9 / 14 m: 0 calmo, 1 quasi calmo, 2 poco mosso, 3 mosso, 4 molto mosso, 5 agitato, 6 molto
+agitato, 7 grosso, 8 molto grosso, 9 tempestoso. Si classifica **l'altezza del dato**, non quella
+arrotondata: le prime fasce sono larghe 10 e 40 cm e arrotondando 0,46 m sarebbe finito in "mosso".
+Sotto i 10 cm l'altezza compare in centimetri (`8cm`), così il numero resta esatto e dentro la sua
+fascia; da 0,10 m in su basta un decimale (`0.5m`). Il grado 0 arriva a 2 cm inclusi: Open-Meteo
+Marine non scende sotto 0,02 m, quindi il suo valore di fondo scala è il "calmo" della tabella. Se
+la fonte cade il pannello mostra `mare n.d.` senza occupare una riga in più, e il footer segnala che
+alcuni dati vengono dalla cache. Per una località lontana dal mare conviene lasciare la sezione
+spenta.
 
 ### Stazione dei treni
 
