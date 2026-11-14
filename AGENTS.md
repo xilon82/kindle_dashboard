@@ -35,8 +35,10 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
 3. **Tutti gli orari sono aware e nel fuso di `config.weather.timezone`**; `ZoneInfo` si crea solo in
    `timezone_utils.zone()`.
 4. **L'ora mostrata è quella del PC** (baked nel PNG): il clock del Kindle non viene mai letto.
-5. **Il renderer produce un'immagine "L"** alla risoluzione `panel.width/height` e non ridimensiona:
-   il device non deve scalare nulla.
+5. **Il renderer produce un'immagine "L"** alla risoluzione richiesta e non ridimensiona: il device
+   non deve scalare nulla. Il server usa `panel.width/height` (600x720, la tela del browser) e accetta
+   `?h=800` (200-1600, validato) per il client nativo, che deve coprire il framebuffer 600x800:
+   con 720 gli ultimi 80 px restano quelli di KUAL (verificato sul device).
 6. **Le larghezze di colonna si misurano con `font.getlength`**, mai con pixel fissi.
 7. **L'intervallo di aggiornamento si calcola solo in `schedule.py`**: fascia corrente e clamp al
    prossimo cambio. Server e renderer leggono quel risultato, non lo ricalcolano. La stessa regola
@@ -204,8 +206,12 @@ Confermato su un Kindle 4 (`Linux kindle 2.6.31-rt11-lab126`, FBInk lo identific
   `curl`, `file`, `ip`, `ifconfig`, `rtcwake`, `powerd_test` e `od` sono assenti.
 - il framework **ridisegna quando KUAL esce**: `eips` disegna, ma l'immagine viene coperta. Un ciclo
   in background la riprende al giro successivo e **sopravvive all'uscita** (verificato: 9 disegni in
-  2m17s); pid verificato con `kill -0`, stop immediato con `kill`. Il pannello copre KUAL mentre è a
-  schermo, quindi l'interfaccia si usa nella pausa fra due disegni.
+  2m17s); pid verificato con `kill -0`, stop immediato con `kill`. Ora il ciclo **scarica**
+  `/panel.png` a ogni giro e sostituisce l'immagine solo se il file è davvero un PNG (dimensione +
+  firma), così un errore di rete non cancella l'ultimo pannello buono. Il pannello copre KUAL mentre
+  è a schermo, quindi l'interfaccia si usa nella pausa fra due disegni. Dopo l'uscita da KUAL la home
+  ridisegna menu e minibar per qualche secondo: il ciclo fa **3 disegni ravvicinati (5 s)** di
+  warm-up prima della cadenza normale.
 - `/etc/init.d/framework stop` libera lo schermo ma porta a **schermo bianco, unità USB non più
   esposta e riavvio** del device, e **falsa i test** di disegno: non è una strada percorribile qui.
 - KUAL elenca l'estensione solo se `config.xml` contiene

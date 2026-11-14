@@ -191,6 +191,11 @@ separato, quindi orologio e dati non possono disallinearsi. Non serve installare
 sul device e non si tocca il framework: l'unità USB resta disponibile, il Kindle si comporta
 normalmente e per fermare il pannello basta uscire dal browser.
 
+La tela servita al browser è **600x720** (la barra degli indirizzi toglie ~70 px). Il **client
+nativo** (`eips`) deve invece coprire tutto il framebuffer: chiede `/panel.png?h=800` e riceve un
+PNG **600x800**. Con 720 gli ultimi 80 px restano quelli di KUAL (provato sul device: si vedeva
+ancora «pagina 1 di 2»). `h` è validato (200-1600) e senza parametro vale la configurazione.
+
 Di notte (finestra `[schedule]`, default **23:00–06:30**) la pagina si ricarica ogni
 `night_refresh_seconds` e al posto dell'ora compare **`NOTTE`**: l'ora sarebbe vecchia fino a un'ora,
 mentre il footer `dati HH:MM` continua a dire quando i dati sono stati raccolti. L'intervallo non
@@ -306,7 +311,7 @@ raggiunge il PC. Voci:
 | Inventario | sola lettura: `/etc/version`, `/proc`, `/sys`, presenza di `curl`/`file`/`rtcwake`, geometria da `eips -i`, stato Wi-Fi. Serve a capire cosa c'è su *questo* firmware |
 | Test immagini (eips) | disegna le varianti di formato di `cache\testimages` (grigi, 1 bit, RGB, palette, JPEG) senza fermare il framework |
 | Mostra panel.png | disegna l'ultimo PNG scaricato: separa il problema del download da quello del rendering |
-| Avvia ciclo (15s) | ridisegna `panel.png` in background ogni 15 s, con pid verificato: serve a dimostrare che il ciclo sopravvive all'uscita da KUAL |
+| Avvia ciclo (30s) | scarica `panel.png` dal PC e lo ridisegna in background ogni 30 s, con pid verificato: un download fallito lascia l'ultima immagine buona |
 | Ferma ciclo | ferma il ciclo in modo immediato (`kill`) e rimuove il pid |
 
 Nessuna di queste voci ferma il framework, spegne il Wi-Fi o sospende il device: al massimo disegnano

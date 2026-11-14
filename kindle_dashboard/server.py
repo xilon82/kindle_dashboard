@@ -9,6 +9,7 @@ from dataclasses import replace
 from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 from .cache import Cache
 from .collect import collect
@@ -21,6 +22,23 @@ from .timezone_utils import zone
 
 # Se telefono e Kindle chiedono il pannello nello stesso istante si raccoglie una volta sola.
 _COLLECT_GUARD_SECONDS = 5
+# Altezza richiedibile dai client nativi (`?h=800`): il framebuffer del Kindle 4 è 600x800, mentre la
+# tela servita al browser è 600x720 perché la barra degli indirizzi toglie ~70 px. Fuori da questo
+# intervallo la richiesta viene ignorata e vale l'altezza di configurazione.
+_NATIVE_HEIGHT_MIN = 200
+_NATIVE_HEIGHT_MAX = 1600
+
+
+def requested_height(query: str) -> int | None:
+    """Altezza chiesta da un client nativo, oppure `None` per usare quella di configurazione."""
+    values = parse_qs(query).get("h", [])
+    if not values:
+        return None
+    try:
+        height = int(values[0])
+    except ValueError:
+        return None
+    return height if _NATIVE_HEIGHT_MIN <= height <= _NATIVE_HEIGHT_MAX else None
 
 
 class PanelService:
@@ -43,16 +61,19 @@ class PanelService:
         moment = datetime.now(zone(self._config.timezone))
         return schedule_refresh_seconds(moment, self._config.schedule)
 
-    def png(self) -> bytes:
+    def png(self, height: int | None = None) -> bytes:
+        """PNG del pannello; `height` diverso dalla configurazione serve ai client nativi."""
         with self._lock:
             moment = datetime.now(zone(self._config.timezone))
             data = self._current_data()
+            size = (self._config.panel.width, height or self._config.panel.height)
             return self._render(
                 replace(
                     data,
                     rendered_at=moment,
                     night=is_night(moment, self._config.schedule),
-                )
+                ),
+                size,
             )
 
     def _current_data(self) -> PanelData:
@@ -62,10 +83,10 @@ class PanelService:
             self._collected_at = time.monotonic()
         return self._data
 
-    def _render(self, data: PanelData) -> bytes:
+    def _render(self, data: PanelData, size: tuple[int, int]) -> bytes:
         image = render_panel(
             data,
-            (self._config.panel.width, self._config.panel.height),
+            size,
             font_override=self._config.render.font,
             bold_override=self._config.render.font_bold,
             stop_priority=self._config.trains.stop_priority,
@@ -129,10 +150,11 @@ def _handler(service: PanelService) -> type[BaseHTTPRequestHandler]:
         server_version = "kindle-dashboard/0.1"
 
         def do_GET(self) -> None:
-            path = self.path.split("?", 1)[0]
+            request = urlsplit(self.path)
+            path = request.path
             if path == "/panel.png":
                 try:
-                    payload = service.png()
+                    payload = service.png(requested_height(request.query))
                 except Exception as exc:  # un errore di rendering non deve uccidere il server
                     self._send_text(HTTPStatus.INTERNAL_SERVER_ERROR, f"render fallito: {exc}\n")
                     return
