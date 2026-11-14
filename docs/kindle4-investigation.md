@@ -87,14 +87,48 @@ system/  documents/  developer/  dashboard/  koreader/  extensions/
 |---|---|---|
 | estensioni KUAL | `koreader`, `dashboard` (+ `KUAL.cfg`) | `G:\extensions\` |
 | script deployato | `dashboard.sh`, `config.xml`, `menu.json` | `G:\extensions\dashboard\` |
-| dati pannello | `dashboard.log` (2.765 B, ultima scrittura 2026-11-01 18:16), `panel.png` (21.530 B, 2026-10-31 18:27) | `G:\dashboard\` |
+| dati pannello | `dashboard.log`, `panel.png` (21.530 B, 2026-10-31 18:27) | `G:\dashboard\` |
 | fbink | `G:\koreader\fbink`, 1.063.032 B | `G:\koreader\` |
 | firma della build fbink | il binario contiene `Image support is disabled` all'offset **278.700** | ricerca binaria sul file |
-| versione firmware | **non disponibile** via USB: `G:\system\` non contiene `version.txt` | elenco `G:\system\` |
+| versione firmware (via USB) | **non disponibile**: `G:\system\` non contiene `version.txt` | elenco `G:\system\` |
 
-Cosa **non** si può sapere dal mount USB (serve il comando `inventory` sul device): `/proc`,
-`/sys`, presenza di `curl`/`file`/`rtcwake`, geometria del framebuffer, stato del Wi-Fi, proprietà
-`lipc`. Sono esattamente le voci raccolte dal nuovo comando `inventory` della §8.
+### 4.1 Inventario eseguito sul device (2026-11-14, da KUAL, sola lettura)
+
+Il comando `inventory` ha risposto a tutte le voci che il mount USB non espone. Valori reali, dal
+log (`2026-11-14T11:08`):
+
+| Voce | Valore | Riga di prova |
+|---|---|---|
+| firmware | `System Software Version: 001-H303_yoshi-354363`, build `Thu May 30 11:05:42 UTC 2019` | `version exit=0` |
+| kernel | `Linux kindle 2.6.31-rt11-lab126 #5 … armv7l` | `uname exit=0` |
+| CPU / RAM | ARMv7 rev 5, BogoMIPS 799.53, `MemTotal: 256112 kB` | `cpu exit=0`, `memoria exit=0` |
+| disco | `/dev/mmcblk0p1` 348,8 MB, 219,4 MB usati, 111,8 MB liberi | `disco exit=0` |
+| framebuffer | **600x800, 8 bpp, `grayscale: 1`, `line_length: 600`**, formato `Y8` | `eips_info exit=0`, `fbink_version exit=0` |
+| fbink | `FBInk 92e1270 for Kindle [Draw=Yes, Bitmap=Yes, … Image=No, …]` | `fbink_version exit=0` |
+| Wi-Fi | `cmState = CONNECTED` | `wifi_state exit=0` |
+| salvascherino | `preventScreenSaver = 1` (già disattivato da una sessione precedente) | `screen_saver exit=0` |
+| sospensione | `/sys/power/state` = `standby mem`; RTC `rtc0` = `mxc_rtc`, `rtc1` = `pmic_rtc` | `power_state`, `rtc` |
+| TLS | `OpenSSL 0.9.8j 07 Jan 2009` | `openssl exit=0` |
+| shell | `BusyBox v1.7.2 (2019-05-30)`: **niente `command -v`, niente `grep -E`, `wget` senza `-T`** | `comandi`, `wget_help`, `processi exit=1` |
+| assenti | `curl`, `file`, `ip`, `ifconfig`, `rtcwake`, `powerd_test`, `od` (dalla lista cercata) | `comandi` |
+
+Conseguenze dirette:
+
+1. **Il framebuffer accetta esattamente ciò che produciamo**: 600x800, 8 bpp, scala di grigi. Il PNG
+   del pannello è `L` 8 bit non interlacciato (D3) e la tela servita al browser è 600x720: il test
+   nativo corretto è quindi **600x800**, che è il default di `kindle/make_test_images.py`.
+2. **`fbink` dichiara `Image=No`**: la build MINIMAL non è un'ipotesi, è la configurazione compilata.
+3. **BusyBox 1.7.2 è vecchio**: `command -v` non esiste, `grep` non ha `-E`, `wget` non ha `-T`.
+   Il primo giro di `inventory` ha rivelato tutti e tre i limiti (vedi `which_list`, `processi` e
+   `check`); lo script ora non usa più queste opzioni e il timeout del download è un watchdog in
+   background.
+4. **Wi-Fi connesso e salvascherino disattivato** al momento del test: `check` è fallito perché sul
+   PC **non c'era il server in ascolto** (`Get-NetTCPConnection -LocalPort 8787` vuoto), non per la
+   rete. La rete resta quella del PC (`192.168.1.14`) letta da `deploy.ps1`.
+
+Cosa **non** si può sapere dal mount USB: `/proc`, `/sys`, presenza di `curl`/`file`/`rtcwake`,
+geometria del framebuffer, stato del Wi-Fi, proprietà `lipc`. Sono esattamente le voci raccolte dal
+comando `inventory` della §8 e riportate qui sopra.
 
 ## 5. Il log del device: cosa è già stato provato
 
@@ -137,11 +171,86 @@ Lettura di queste righe:
    prova da non ripetere senza un motivo nuovo.
 5. **Nessuna riga su Wi-Fi, RTC o sospensione**: quei passi non sono mai stati eseguiti. Non sono
    falliti: sono *non testati*.
-6. `eips -i` ha prodotto solo l'intestazione `Fixed framebuffer info`: **la geometria del
-   framebuffer non è registrata** (l'output multi-riga è stato collassato in una riga sola). Serve
-   rileggerla per intero con il nuovo `inventory`.
-7. La versione del firmware resta ignota: `uname` dà il kernel (`2.6.31-rt11-lab126`, build
-   `#5 Sat Jan 12 20:39:09 PST 2013`), non il firmware Lab126. Va letto `/etc/version` sul device.
+6. `eips -i` del vecchio test era stato collassato in una riga (`|Fixed framebuffer info|`): **la
+   geometria non era registrata**. Il nuovo `inventory` la riporta per intero (§5.1).
+7. La versione del firmware non era disponibile via USB: `uname` dà il kernel, non il firmware
+   Lab126. Ora è letta da `/etc/version` (§5.1).
+
+### 5.1 Secondo giro (2026-11-14, comando `inventory` da KUAL)
+
+```
+2026-11-14T11:08:18 version exit=0: System Software Version: 001-H303_yoshi-354363|Thu May 30 11:05:42 UTC 2019
+2026-11-14T11:08:19 eips_info exit=0: |Fixed framebuffer info| … xres: 600  yres: 800  bits_per_pixel: 8  grayscale: 1 … line_length: 600
+2026-11-14T11:08:19 fbink_version exit=0: … FBInk 92e1270 for Kindle [Draw=Yes, Bitmap=Yes, Fonts=Yes, Unifont=No, OpenType=Yes, Image=No, …]
+2026-11-14T11:08:19 processi exit=1: grep: invalid option -- 'E'
+2026-11-14T11:08:20 wifi_state exit=0: CONNECTED
+2026-11-14T11:08:20 screen_saver exit=0: 1
+```
+
+Le ultime due righe raccontano due cose diverse e vanno tenute separate:
+
+- `cmState = CONNECTED` e `preventScreenSaver = 1` sono **stato reale del device** (Wi-Fi connesso,
+  salvascherino disattivato da una sessione precedente).
+- `processi exit=1` e il `comandi:` con tutto `ASSENTE` erano **bug del nostro script** su questa
+  build: `grep` non conosce `-E` e la shell non ha `command -v`. Sono stati corretti (ricerca nel
+  `PATH` fatta a mano; `grep -e … -e …`), insieme a `wget -T`, che `wget_help` ha dimostrato non
+  esistere (ora il timeout è un watchdog in background).
+
+Il valore più importante è la geometria: **600x800, 8 bpp, `grayscale: 1`, formato `Y8`**. È
+esattamente il formato del PNG del pannello, quindi il formato giusto c'era già.
+
+### 5.2 Il test dei formati, rifatto senza fermare il framework (2026-11-14)
+
+```
+2026-11-14T11:14:10 === immagini ===
+2026-11-14T11:14:11 immagine test.jpg exit=0
+2026-11-14T11:14:14 immagine test_1.png exit=1 -> eips: paint_image> cannot open "...":8bit only
+2026-11-14T11:14:17 immagine test_l.png exit=0
+2026-11-14T11:14:21 immagine test_p.png exit=1 -> eips: paint_image> cannot open "...":8bit only
+2026-11-14T11:14:24 immagine test_rgb.png exit=0
+2026-11-14T11:14:27 === fine immagini ===
+```
+
+Risultato visivo (osservato sullo schermo): le immagini passano e si vedono; l'ultima, `test_rgb.png`,
+è **deformata**. Lettura:
+
+- `eips` **disegna** con il framework avviato: grigi 8 bit (`test_l.png`) e JPEG sono visibili;
+- il vincolo reale è **8 bit**: 1-bit e palette indicizzata (4 bit) sono rifiutati con `8bit only`, non
+  con un errore di sintassi;
+- RGB 8 bit viene accettato (`exit=0`) ma reso male: l'exit code prova che il file è stato letto, non
+  che l'immagine sia corretta;
+- il vecchio «schermo bianco» era quindi un **test falsato**: girava dopo `framework fermato`, ed è
+  l'unica variabile cambiata fra i due giri oltre ai nomi dei file.
+
+Il pannello produce `L` 8 bit: è il caso che funziona. Il prossimo passo non è più «capire se `eips`
+disegna», ma «far girare un ciclo nativo e verificarlo» (§8, E2-E3).
+
+### 5.3 Il framework ridisegna all'uscita di KUAL; il ciclo in background lo recupera (2026-11-14)
+
+`Mostra panel.png` ha disegnato il pannello **e poi lo ha perso**: `eips` funziona, ma quando KUAL
+esce il framework ridisegna la schermata e copre l'immagine. Nel log: `show panel.png exit=0` due
+volte, nessun errore.
+
+Con un ciclo in background (`loop`, 15 s) il pannello viene ripreso al giro successivo:
+
+```
+2026-11-14T11:30:48 loop: avvio ogni 15 s
+2026-11-14T11:30:49 loop: disegnato panel.png
+… nove giri fino alle 11:33:05 …
+2026-11-14T11:33:16 loop: stop richiesto (pid 3011)
+2026-11-14T11:33:20 loop: terminato
+```
+
+Conclusioni:
+
+- il processo in background **sopravvive all'uscita di KUAL**: ha continuato a disegnare per oltre
+  due minuti, quindi il disegno periodico è possibile **senza** fermare il framework;
+- il pid file con `kill -0` ha impedito il doppio avvio e lo stop ha funzionato; dopo il test lo stop
+  è stato reso immediato (`kill` + `trap` che rimuove il pid), perché aspettare la fine del `sleep`
+  rendeva una corsa fermarlo mentre il pannello ricopriva KUAL;
+- resta un **costo d'uso**: mentre il ciclo gira, il pannello copre l'interfaccia a ogni giro, quindi
+  KUAL è raggiungibile solo nella finestra fra due disegni. Per un ciclo reale l'intervallo deve
+  venire da `refresh_seconds` (90 s di giorno, 3600 s di notte) e lo stop deve restare immediato.
 
 ## 6. Diagnosi per fase
 
@@ -150,26 +259,38 @@ Lettura di queste righe:
 | Endpoint e header (PC) | **Verificato** | `server.py:131-160`: `/panel.png` `image/png`, `Content-Length`, `no-store`; nessun redirect, nessuna autenticazione |
 | Download device → PC | **Verificato** | `panel.png` 21.530 B sul device; log `png: 19721 byte`; `wget` in `/usr/bin` |
 | Integrità del PNG | **Verificato** | `mode=L bit_depth=8 interlace=none`, cioè il caso più semplice da decodificare |
-| Decodifica/disegno con `eips` | **Fallito** | 4 formati, `exit=0`, schermo bianco (§5) |
-| Disegno con `fbink` di KOReader | **Fallito** | build MINIMAL senza supporto immagini (messaggio + stringa nel binario) |
-| Framework fermato per liberare lo schermo | **Fallito e rischioso** | schermo bianco, USB non più esposta, riavvio del device |
+| Geometria del framebuffer | **Verificato** | `inventory` 2026-11-14: 600x800, 8 bpp, `grayscale: 1`, `line_length: 600`, formato `Y8` |
+| Decodifica/disegno con `eips`, L 8 bit | **Verificato** | `test_l.png` → `exit=0` e **visibile**; il pannello è `L` 8 bit (§5.2) |
+| Disegno con `eips`, JPEG | **Verificato** | `test.jpg` → `exit=0` e visibile |
+| Disegno con `eips`, RGB 8 bit | **Parziale** | `test_rgb.png` → `exit=0` ma **deformato**: accettato dal decoder, reso male |
+| Disegno con `eips`, 1-bit / palette | **Fallito (rifiutato)** | `eips: paint_image> cannot open "…":8bit only` |
+| Disegno con `fbink` di KOReader | **Fallito** | `FBInk 92e1270 … Image=No`: build senza supporto immagini |
+| Framework fermato per liberare lo schermo | **Fallito e rischioso** | schermo bianco, USB non più esposta, riavvio; **falsava** il test `eips` (§5.2) |
+| Persistenza del disegno dopo l'uscita da KUAL | **Verificato** | il ciclo `loop` ha disegnato 9 volte in 2m17s **dopo** l'uscita da KUAL (§5.3) |
+| Ciclo di disegno periodico (senza download) | **Verificato** | giro da 15 s, pid verificato con `kill -0`, stop immediato |
+| Interazione con l'interfaccia Amazon | **Parziale** | il pannello copre KUAL a ogni giro: l'interfaccia si usa solo fra due disegni |
 | Browser | **Verificato dall'uso reale** | pagina con meta refresh e PNG statico; nessun JS |
-| Wi-Fi on/off | **Non testato** | nessun comando eseguito; `cmState` mai letto |
-| RTC / sospensione / risveglio | **Non testato** | nessun comando eseguito; `rtcWakeup` mai impostato |
-| Ciclo completo periodico | **Non testato** | dipende dai due precedenti |
+| Wi-Fi: stato radio (lettura) | **Verificato** | `lipc-get-prop com.lab126.wifid cmState` → `CONNECTED` |
+| Wi-Fi on/off | **Non testato** | nessun comando eseguito; nessuno script di questa branch spegne la radio |
+| RTC e sospensione: meccanismo | **Parziale** | `/sys/power/state` = `standby mem`; `rtc0` = `mxc_rtc`, `rtc1` = `pmic_rtc`; `rtcWakeup` mai impostato |
+| Risveglio RTC / ripresa del processo | **Non testato** | nessun comando eseguito |
+| Compatibilità BusyBox 1.7.2 | **Verificato** | `command -v`, `grep -E` e `wget -T` assenti: script adattato e verificato in container |
+| Ciclo completo periodico | **Non testato** | dipende dai passi precedenti |
 
-**Diagnosi**: il blocco è al passo 4 (disegno sul framebuffer), non al passo 1-2. Le prove
-disponibili non permettono di stabilire se `eips` non disegna perché (a) la sintassi/opzioni di
-questa versione sono diverse, (b) l'immagine deve avere una geometria esattamente uguale al
-framebuffer, o (c) il framework possiede lo schermo e `eips` scrive su un framebuffer che viene
-subito ridisegnato. Le tre ipotesi si distinguono con l'inventario (§8, E1) e con i test E2-E3:
-la (c) richiederebbe di nuovo di fermare il framework, quindi resta l'ultima e solo con approvazione.
+**Diagnosi (aggiornata al 2026-11-14)**: disegno e persistenza sono **verificati**: `eips` disegna
+immagini 8 bit con il framework avviato, e un ciclo in background le riprende dopo l'uscita da KUAL.
+Il vecchio «schermo bianco» era un test falsato dal `framework stop` (due variabili insieme). Restano
+da dimostrare il **download dal PC nel ciclo**, il **Wi-Fi on/off** e la **ripresa RTC**: nessuno dei
+tre è stato eseguito. Il vincolo di formato (solo 8 bit, RGB reso male) non tocca il pannello.
 
 ## 7. Perché il browser resta la baseline
 
-Il browser non è una scorciatoia presa senza prove: è l'unico percorso con una prova di successo
-ripetuta, e non richiede nulla sul device (né binari, né framework fermato, né USB occupata). Il
-suo costo è noto solo a metà: la batteria con la pagina aperta per ore **non è stata misurata**.
+Il browser è la baseline **per scelta prudente, non perché il framebuffer sia inutilizzabile**: è
+l'unico percorso con una prova di successo ripetuta, non richiede nulla sul device e non può
+lasciarlo in uno stato strano. Il disegno nativo ha ora due prove (`images` §5.2 e `loop` §5.3), ma
+non un ciclo completo: mancano download dal PC, Wi-Fi on/off, ripresa RTC e una misura di batteria.
+In più il pannello nativo copre l'interfaccia mentre è a schermo. Il costo del browser è noto solo a
+metà: la batteria con la pagina aperta per ore **non è stata misurata**.
 
 Due dettagli che l'indagine ha chiarito e che vanno tenuti fermi:
 
@@ -182,10 +303,11 @@ Due dettagli che l'indagine ha chiarito e che vanno tenuti fermi:
 
 ## 8. Prossimi esperimenti, in ordine
 
-Nessuno di questi passi è stato eseguito in questa sessione. Ognuno indica cosa serve e cosa
-potrebbe rompersi. Le scritture sul Kindle (`deploy.ps1` senza `-DryRun`) richiedono il tuo ok.
+E1 ed E2 sono stati eseguiti il 2026-11-14 (risultati in §4.1 e §5.2); restano E3-E6. Ognuno indica
+cosa serve e cosa potrebbe rompersi; le scritture sul Kindle (`deploy.ps1` senza `-DryRun`) richiedono
+il tuo ok.
 
-### E1 — Inventario completo (sola lettura, rischio nullo)
+### E1 — Inventario completo (fatto il 2026-11-14, sola lettura)
 
 ```powershell
 python kindle\make_test_images.py        # rigenera cache\testimages con la scheda e il timestamp
@@ -193,58 +315,52 @@ python kindle\make_test_images.py        # rigenera cache\testimages con la sche
 .\kindle\deploy.ps1 -TestImages          # copia estensione + varianti (scrive su G:\)
 ```
 
-Sul Kindle: **KUAL → Dashboard → Inventario**. Poi leggi il risultato dal PC:
+Sul Kindle: **KUAL → Dashboard → Inventario**, poi leggi il log dal PC (`Get-Content
+G:\dashboard\dashboard.log -Tail 40`). Risultato: §4.1. Ha rivelato anche i tre limiti del BusyBox
+1.7.2, corretti nello script.
 
-```powershell
-Get-Content G:\dashboard\dashboard.log -Tail 40
-```
+### E2 — Formati con `eips`, senza fermare il framework (fatto il 2026-11-14)
 
-Risponde alle domande aperte: `/etc/version`, presenza di `curl`/`file`/`od`/`tail`, geometria del
-framebuffer da `eips -i`, `cmState`, proprietà `preventScreenSaver`, build di `fbink`. Non cambia
-niente sul device.
+**KUAL → Dashboard → Test immagini (eips)**: `eips -c`, poi `eips -f -g` su ogni variante, con `exit`
+e output nel log e 3 s fra un file e l'altro. Risultato: §5.2 — **disegna** (grigi 8 bit e JPEG),
+rifiuta 1-bit e palette (`8bit only`), rende male l'RGB.
 
-### E2 — Formati con `eips`, senza fermare il framework
+### E3 — Immagine vera, geometria nativa (fatto il 2026-11-14)
 
-**KUAL → Dashboard → Test immagini (eips)**. Lo script pulisce lo schermo (`eips -c`), disegna ogni
-variante (`eips -f -g`), registra `exit` e output e aspetta 3 s fra un file e l'altro: si fa in
-tempo a guardare. Al termine rileggi il log.
+`Mostra panel.png` (600x800 `L`) ha disegnato il pannello integro: **la geometria non è un problema**.
+L'immagine spariva all'uscita da KUAL, e un ciclo in background l'ha ripresa (§5.3). Per confrontare
+le due tele dello stesso contenuto si può generare un PNG 600x720 e uno 600x800 (con un
+`config` di prova che ha `height = 800`, senza toccare quello di produzione), ma il test decisivo è
+già passato.
 
-Esito atteso, in base alle prove vecchie: `exit=0` per tutti e quattro. La novità è l'**output**
-del comando e la verifica visiva fatta con la scheda nuova (timestamp, rampa di grigi, righe da
-1 px, etichette `ALTO`/`BASSO`): se compare anche solo la scheda, il disegno funziona e il problema
-era il formato; se non compare nulla, il problema è nel comando o nel possesso dello schermo.
+### E4 — Ciclo con download dal PC (prossimo)
 
-### E3 — Immagine vera, due geometrie
+Il ciclo attuale ridisegna lo stesso `panel.png` (contenuto del 31/10). Il passo successivo è
+scaricarlo dal server a ogni giro, con le stesse regole di `check`: file temporaneo, verifica
+dimensione+firma PNG, poi `eips`. Servono:
 
-Con `panel.png` già sul device: **KUAL → Dashboard → Mostra panel.png**.
+- **server acceso** sul PC (`python -m kindle_dashboard serve`) e raggiungibile dal device:
+  prima si prova **KUAL → Verifica server**; se fallisce per firewall, `kindle\allow-lan.ps1` da
+  PowerShell **amministratore** (la rete è `Public`, regola `Private` inapplicabile);
+- nessuna gestione Wi-Fi in questo passo: il device è già connesso (`cmState CONNECTED`);
+- stop immediato fra un giro e l'altro, come ora.
 
-Poi le varianti del PNG reale, per separare contenuto e geometria:
+### E5 — Solo se serve: help e versione di `eips`
 
-```powershell
-python -m kindle_dashboard render -o panel.png          # 600x720, la tela del browser
-python kindle\make_test_images.py --source panel.png   # varianti di quel PNG
-python kindle\make_test_images.py --size 600x800       # scheda nativa
-.\kindle\deploy.ps1 -TestImages
-```
-
-Se una geometria funziona e l'altra no, la conclusione è utile e va scritta qui: significa che
-`eips` accetta solo la dimensione del framebuffer.
-
-### E4 — Solo se E2/E3 non disegnano: help e versione di `eips`
-
-Serve una shell sul device (SSH o seriale). Comandi **in sola lettura**:
+`inventory` ora registra anche `eips_help` (uso della versione installata), quindi non serve SSH.
+Comandi comunque utili da shell, **in sola lettura**:
 
 ```sh
-eips 2>&1 | head -n 40          # uso e opzioni supportate da *questa* versione
-eips -i                          # geometria del framebuffer, per intero
-cat /etc/version                 # firmware Lab126
+eips 2>&1 | head -n 40
+eips -i
+cat /etc/version
 ```
 
-Confronto utile con le fonti esterne già citate nel mandato (`wiki.mobileread.com/wiki/Eips` e la
+Confronto con le fonti esterne già citate nel mandato (`wiki.mobileread.com/wiki/Eips` e la
 discussione sulle differenze fra versioni). **Non** installare il fbink completo né altri binari
-senza approvazione: una build sbagliata su questo hardware non ha un canale di recupero comodo.
+senza approvazione.
 
-### E5 — Wi-Fi acceso/spento (richiede approvazione)
+### E6 — Wi-Fi acceso/spento (richiede approvazione)
 
 Da provare solo **dopo** che il disegno funziona, altrimenti si misura un ciclo che non mostra
 niente. Comandi candidati (da verificare prima con `lipc-get-prop`):
@@ -258,7 +374,7 @@ lipc-get-prop com.lab126.wifid cmState          # atteso CONNECTED, con timeout 
 La sessione SSH via Wi-Fi muore alla disconnessione: prima servono accesso USB o un secondo canale
 di controllo. Nessuno script di questa branch spegne la radio.
 
-### E6 — RTC, sospensione, ciclo
+### E7 — RTC, sospensione, ciclo completo
 
 Non implementato di proposito. Prima va verificato il meccanismo (`lipc-set-prop -i
 com.lab126.powerd rtcWakeup <secondi>`, `powerd_test` per osservare gli stati), poi un singolo

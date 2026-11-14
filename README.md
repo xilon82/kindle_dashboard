@@ -306,10 +306,13 @@ raggiunge il PC. Voci:
 | Inventario | sola lettura: `/etc/version`, `/proc`, `/sys`, presenza di `curl`/`file`/`rtcwake`, geometria da `eips -i`, stato Wi-Fi. Serve a capire cosa c'è su *questo* firmware |
 | Test immagini (eips) | disegna le varianti di formato di `cache\testimages` (grigi, 1 bit, RGB, palette, JPEG) senza fermare il framework |
 | Mostra panel.png | disegna l'ultimo PNG scaricato: separa il problema del download da quello del rendering |
+| Avvia ciclo (15s) | ridisegna `panel.png` in background ogni 15 s, con pid verificato: serve a dimostrare che il ciclo sopravvive all'uscita da KUAL |
+| Ferma ciclo | ferma il ciclo in modo immediato (`kill`) e rimuove il pid |
 
-Le tre voci nuove non fermano il framework, non spengono il Wi-Fi e non sospendono il device: al
-massimo disegnano sullo schermo, e si esce da KUAL come sempre. Le varianti di formato si generano
-con `python kindle\make_test_images.py` e si copiano con `.\kindle\deploy.ps1 -TestImages`.
+Nessuna di queste voci ferma il framework, spegne il Wi-Fi o sospende il device: al massimo disegnano
+sullo schermo. Mentre il ciclo gira il pannello copre l'interfaccia a ogni giro, quindi KUAL si
+raggiunge nella pausa fra due disegni; **Ferma ciclo** ora è immediato. Le varianti di formato si
+generano con `python kindle\make_test_images.py` e si copiano con `.\kindle\deploy.ps1 -TestImages`.
 
 Con il pannello aperto nel browser il Kindle va in salvascherino dopo il timeout di inattività: usa
 **Tieni schermo acceso** (vale fino al riavvio del device) e, se serve, aumenta il timeout schermo
@@ -341,6 +344,7 @@ locale e non leggono `config.toml`.
 | Nel container le righe finiscono con `…` (`REG 12…`, `SAB 18°/…`, `poco mosso`) mentre l'anteprima sul PC è integra | l'anteprima e il device misurano font diversi: le colonne, misurate con `font.getlength`, tagliano il testo | il PC non sta usando il TTF incluso nel pacchetto. Diagnosi: `python -c "from kindle_dashboard.render import fonts; print(fonts.load(19).path)"` deve stampare un percorso dentro `kindle_dashboard/render/fonts/`, non `C:\WINDOWS\Fonts\…`; se esce dal repo, reinstalla (`python -m pip install -e .`) o togli l'override in `[render] font`/`font_bold`. Se il PC è a posto, è il container a essere vecchio: `docker compose build` + `docker rm -f kindle-dashboard` + `docker compose up -d`. Per il confronto usa `python -m kindle_dashboard render -o preview.png` |
 | Voglio cambiare o aggiornare il font del pannello | i TTF stanno nel repo (`kindle_dashboard/render/fonts/`), così PC e device usano lo stesso file | sostituisci `LiberationSans-Regular.ttf`/`LiberationSans-Bold.ttf` (e `OFL.txt` se cambi famiglia: la licenza deve viaggiare con i binari) e rifai **tutte** le misure: `python -m pytest -q`, `python -m kindle_dashboard render -o preview.png`, poi guarda il PNG. Per il container serve ricostruire **e** ricreare (`docker compose build` + `docker rm -f kindle-dashboard` + `docker compose up -d`) |
 | Il Kindle non scarica nulla | verifica `http://<ip>:8787/panel.png` dal PC, poi dallo stesso URL nel browser del Kindle; controlla la regola firewall sulla rete privata |
+| Dopo aver installato Docker o WSL il Kindle non raggiunge più il PC | `deploy.ps1` scriveva in `HOST=` il primo IPv4 dell'elenco, che ora è l'adattatore virtuale (`192.168.208.x`, senza gateway). Ora sceglie l'IP della scheda della rotta di default: rilancia `.\kindle\deploy.ps1` oppure passa `-HostAddress <ip-lan>` |
 | Dal browser del Kindle "impossibile connettersi" | la rete è classificata **Public** da Windows e la regola `Private` non si applica: lancia `kindle\allow-lan.ps1` come amministratore (riclassifica la rete e apre la porta). Se alterni 2.4/5 GHz, usa `-AnyProfile`: il profilo firewall è per SSID, quindi cambiando banda la regola `Private` smetterebbe di valere |
 | Il Kindle non vede la rete Wi-Fi del PC | SSID a 5 GHz: il Kindle 4 ha solo radio 2.4 GHz, collegalo all'SSID 2.4 GHz dello stesso router (stessa subnet, senza "AP isolation") |
 | PNG scaricato ma schermo bianco/nero | `fbink` non parte: prova a mano sul device `fbink -q -c -g file=/mnt/us/dashboard/panel.png -W GC16` e leggi `/mnt/us/dashboard/dashboard.log` |
@@ -365,12 +369,14 @@ Get-NetFirewallApplicationFilter | Where-Object { $_.Program -like '*python*' } 
 ## Limiti noti
 
 - Layout tarato su 600x800: altre risoluzioni scalano, ma non sono state provate sul campo.
-- **Il disegno nativo a schermo intero non è utilizzabile su questo device**: il `fbink` incluso in
-  KOReader è compilato senza supporto immagini e `eips` (in `/usr/sbin`) resta bianco con PNG in
-  scala di grigi, RGB, 1-bit e JPEG. Fermare il framework per liberare lo schermo porta a schermo
-  bianco, unità USB non più esposta e riavvii. Per questo il pannello si guarda nel browser.
-  Il PNG che il device ha davvero scaricato è **600x800, grigi 8 bit, non interlacciato**: il formato
-  non era la causa. Prove, comandi e stato di ogni fase in
+- **Il disegno nativo è possibile, ma non ancora automatizzato.** `eips` (in `/usr/sbin`) disegna PNG
+  **a 8 bit** con il framework in esecuzione: `test_l.png` (grigi) e `test.jpg` escono con `exit=0` e
+  sono visibili, `test_rgb.png` esce **deformato**, `test_1.png` e `test_p.png` sono rifiutati con
+  `eips: paint_image> cannot open "…":8bit only`. Il pannello è già `L` 8 bit, cioè il formato giusto;
+  il `fbink` di KOReader resta senza supporto immagini (`Image=No`). **Non** serve fermare il
+  framework: era proprio quello a produrre lo schermo bianco dei test vecchi. Il pannello continua a
+  passare dal browser perché manca un ciclo collaudato (download + disegno + ripresa), non perché il
+  framebuffer sia inutilizzabile. Prove e stato di ogni fase in
   [docs/kindle4-investigation.md](docs/kindle4-investigation.md) e
   [docs/kindle4-test-matrix.md](docs/kindle4-test-matrix.md).
 - Ricorrenze supportate: `FREQ` DAILY/WEEKLY/MONTHLY/YEARLY con `INTERVAL`, `COUNT`, `UNTIL` e

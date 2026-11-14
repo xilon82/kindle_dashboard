@@ -187,24 +187,39 @@ Confermato su un Kindle 4 (`Linux kindle 2.6.31-rt11-lab126`, FBInk lo identific
 `Tequila on Yoshi`):
 
 - `wget` presente (`/usr/bin/wget`): il download del PNG funziona.
-- `eips` esiste ma in **`/usr/sbin/eips`** (non `/usr/bin`), e **non mostra immagini**: con quattro
-  formati (grigi, RGB, 1-bit, JPEG) lo schermo resta bianco pur con exit code 0. Il PNG scaricato
-  dal device era però già `L`, 8 bit, non interlacciato: il formato non era la causa.
+- `eips` esiste in **`/usr/sbin/eips`** e **disegna**, purché l'immagine sia **8 bit** e il framework
+  resti avviato: `test_l.png` (L 8 bit) e `test.jpg` → `exit=0` e visibili; `test_rgb.png` → `exit=0`
+  ma deformata; `test_1.png` e `test_p.png` → `eips: paint_image> cannot open "…":8bit only`. Il
+  pannello è `L` 8 bit, quindi il formato giusto. Il vecchio «schermo bianco con exit 0» era un test
+  falsato dal framework fermato.
 - il `fbink` incluso in KOReader è **MINIMAL**: `[FBInk] Image support is disabled in this FBInk
   build!`, e la stringa `Image support is disabled` è compilata **dentro** `koreader/fbink`
-  (offset 278.700 del binario). Non è un errore di sintassi nostro.
+  (offset 278.700 del binario). Non è un errore di sintassi nostro: `fbink -v` stampa
+  `FBInk 92e1270 for Kindle [Draw=Yes, Bitmap=Yes, …, Image=No, …]`.
+- firmware: `System Software Version: 001-H303_yoshi-354363`, build `Thu May 30 11:05:42 UTC 2019`
+  (`/etc/version`); kernel `2.6.31-rt11-lab126`, 256 MB di RAM.
+- framebuffer: **600x800, 8 bpp, `grayscale: 1`, formato `Y8`** (`eips -i` e `fbink -v`): è lo
+  stesso formato del PNG del pannello, quindi il formato non è mai stato la causa.
+- shell: **BusyBox 1.7.2 (2019-05-30)** senza `command -v`, senza `grep -E` e senza `wget -T`;
+  `curl`, `file`, `ip`, `ifconfig`, `rtcwake`, `powerd_test` e `od` sono assenti.
+- il framework **ridisegna quando KUAL esce**: `eips` disegna, ma l'immagine viene coperta. Un ciclo
+  in background la riprende al giro successivo e **sopravvive all'uscita** (verificato: 9 disegni in
+  2m17s); pid verificato con `kill -0`, stop immediato con `kill`. Il pannello copre KUAL mentre è a
+  schermo, quindi l'interfaccia si usa nella pausa fra due disegni.
 - `/etc/init.d/framework stop` libera lo schermo ma porta a **schermo bianco, unità USB non più
-  esposta e riavvio** del device: non è una strada percorribile qui.
+  esposta e riavvio** del device, e **falsa i test** di disegno: non è una strada percorribile qui.
 - KUAL elenca l'estensione solo se `config.xml` contiene
   `<menus><menu type="json" dynamic="true">menu.json</menu></menus>`.
 - il mount USB basta per leggere `/mnt/us` **e** `dashboard.log` anche con il framework avviato:
   prima di aggiungere un esperimento si legge il log, non si ricomincia da capo.
 
-Conseguenza di progetto: **la visualizzazione passa dal browser** (`/panel.html` con meta refresh);
-l'estensione KUAL è solo diagnostica (`Verifica server`, `Diagnostica`, `Inventario`,
-`Test immagini (eips)`, `Mostra panel.png`). Nessuna voce ferma il framework, spegne il Wi-Fi o
-sospende il device. Non reintrodurre il disegno nativo su questo hardware senza una prova concreta
-che funzioni.
+Conseguenza di progetto: **il browser resta la visualizzazione predefinita** (`/panel.html` con meta
+refresh) finché non esiste un ciclo nativo collaudato; l'estensione KUAL ha voci diagnostiche
+(`Verifica server`, `Diagnostica`, `Inventario`, `Test immagini (eips)`, `Mostra panel.png`) e quelle
+di disegno usano `eips` con immagini **8 bit**, senza fermare il framework. Nessuna voce spegne il
+Wi-Fi o sospende il device. Il disegno nativo **non è più «impossibile»**: le prove sono `images`
+(formati) e `loop` (persistenza); per promuoverlo a default serve un ciclo con download, verifica del
+PNG, disegno e ripresa dalla sospensione.
 
 Rapporto con le prove, fase per fase: `docs/kindle4-investigation.md` e `docs/kindle4-test-matrix.md`.
 Strumenti: `kindle/inspect_png.py` (formato/depth/interlace), `kindle/make_test_images.py` (scheda

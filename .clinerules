@@ -80,12 +80,19 @@ Errori realmente accaduti qui, da non ripetere:
     Per gli script con effetti collaterali non filtrare l'output; al massimo redirigere a `$null`.
 11. **Il `fbink` incluso in KOReader è compilato MINIMAL** (`[FBInk] Image support is disabled in
     this FBInk build!`): non può disegnare PNG.
-12. **`eips` non mostra immagini su questo firmware**: sta in `/usr/sbin/eips` (non `/usr/bin`) e con
-    PNG in grigi, RGB, 1-bit e JPEG lo schermo resta bianco, pur restituendo exit code 0. Il codice
-    di uscita non è una prova che l'immagine sia stata disegnata.
+12. **`eips` disegna, ma solo immagini a 8 bit e con il framework in esecuzione.** Verificato il
+    2026-11-14 con il comando `images` (che **non** ferma il framework): `test_l.png` (L 8 bit)
+    `exit=0` e visibile, `test.jpg` `exit=0` e visibile, `test_rgb.png` `exit=0` ma **deformata**,
+    mentre `test_1.png` e `test_p.png` sono rifiutati con
+    `eips: paint_image> cannot open "…":8bit only`. Il vecchio «schermo bianco con exit 0» era un
+    test confuso: girava dopo `framework fermato` (§regola 13), e fermare il framework rompe il
+    disegno. Morale: un test misura una variabile sola, e `exit=0` non prova che l'immagine sia
+    corretta (l'RGB esce deformato) — la prova resta visiva. Il formato giusto è **L 8 bit**, quello
+    che il renderer produce già.
 13. **Fermare il framework non è una scorciatoia**: `/etc/init.d/framework stop` libera lo schermo
     ma porta a schermo bianco, unità USB non più esposta (quindi nessun file `STOP` raggiungibile) e
-    riavvio del device. La visualizzazione passa dal browser (`/panel.html`), non dal framebuffer.
+    riavvio del device. In più falsa i test: il vecchio `eips` «bianco» girava proprio in quello
+    stato. Con il framework avviato `eips -f -g` disegna (regola 12): è così che va provato.
 14. **Un `pid` file orfano blocca l'avvio per sempre**: se un ciclo scrive `dashboard.pid` e controlla
     solo l'esistenza del file, dopo un kill o un mount USB la voce di menu risponde "gia' in
     esecuzione" e non fa nulla. Va verificata la liveness con `kill -0`.
@@ -154,6 +161,18 @@ Errori realmente accaduti qui, da non ripetere:
     riproducibile. E `exit=0` di `eips` non prova che l'immagine sia a schermo (regola 12): la prova
     resta visiva. Infine, una cartella citata da uno script (`cache\testimages` in `-TestImages`)
     non è detto che esista: deve avere un generatore nel repo (`kindle/make_test_images.py`).
+24. **Con Docker/WSL attivi il "primo IPv4" non è la LAN.** `Get-NetIPAddress` elenca per primo
+    l'adattatore virtuale (`192.168.208.1`, senza gateway) e `deploy.ps1` ci ha scritto `HOST=` per
+    davvero: il Kindle non può raggiungerlo e `check` fallisce senza dire il perché. L'indirizzo
+    giusto è quello della scheda che regge la rotta di default
+    (`Get-NetRoute -DestinationPrefix 0.0.0.0/0` → `InterfaceIndex`). Regola generale: per indovinare
+    un IP si chiede alla rotta, non all'elenco delle interfacce.
+25. **Il BusyBox del K4 è 1.7.2 e non ha `command -v`, `grep -E`, `wget -T`.** Lo ha rivelato
+    `inventory`: `comandi:` tutto `ASSENTE` pur essendo i binari presenti, `grep: invalid option --
+    'E'`, e `wget --help` elenca solo `-c -s -q -O --header -Y -P -U`. Gli script lato device usano
+    solo opzioni presenti in quel `--help`; il BusyBox 1.37 del container **non** è una prova di
+    compatibilità. Timeout senza `timeout`/`-T`: watchdog `( sleep 15; kill -9 $pid ) &`; per cercare
+    un eseguibile si scorre il `PATH` a mano; per più pattern `grep -e … -e …`.
 
 ## §Workflow
 

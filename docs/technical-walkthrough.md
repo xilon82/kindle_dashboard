@@ -33,34 +33,37 @@ Conseguenze di progetto:
 - l'aggiornamento è un `<meta http-equiv="refresh">`: una tecnologia del 1996, ma l'unica cosa che
   il browser del Kindle capisce in modo affidabile.
 
-### Perché il browser e non il framebuffer
+### Perché il browser (e a che punto è il framebuffer)
 
-La strada "nativa" (disegnare i pixel direttamente sul framebuffer) è stata tentata e **scartata con
-prove concrete**:
+La strada "nativa" (disegnare i pixel direttamente sul framebuffer) è stata a lungo considerata
+impraticabile. La verifica del 2026-11-14 ha mostrato che il colpevole non era il formato, ma il
+**contesto** del test:
 
 | Tentativo | Esito reale |
 |---|---|
-| `fbink` incluso in KOReader | `[FBInk] Image support is disabled in this FBInk build!` — è compilato MINIMAL, senza supporto immagini |
-| `eips -g` (tool nativo, `/usr/sbin/eips`) | schermo bianco con PNG in **4 formati** (grigi, RGB, 1-bit, JPEG), pur con exit code 0 |
+| `fbink` incluso in KOReader | `[FBInk] Image support is disabled in this FBInk build!` — compilato MINIMAL: `FBInk 92e1270 … Image=No` |
+| `eips -f -g` con il **framework avviato** | `test_l.png` (L 8 bit) e `test.jpg` → `exit=0` e **visibili**; `test_rgb.png` → `exit=0` ma **deformato**; `test_1.png`/`test_p.png` → `eips: paint_image> … :8bit only` |
+| `eips -g` con il framework **fermato** (test vecchio) | schermo bianco con quattro formati, pur con exit code 0 |
 | `/etc/init.d/framework stop` per liberare lo schermo | schermo bianco, **unità USB non più esposta**, riavvio del device |
 
-Morale tecnica: **exit code 0 non è la prova che un'immagine sia stata disegnata**, e fermare il
-framework toglie anche la modalità "archivio USB" (la gestisce il framework), quindi non è nemmeno
-un'uscita di sicurezza. Il browser, invece, funziona e lascia il device in uno stato normale.
+Morale tecnica: `exit=0` non prova che l'immagine sia *corretta* (l'RGB esce deformato), ma prova che
+`eips` ha letto il file. Distinguere «non disegna» da «disegna male» richiede l'output del comando,
+non solo l'exit code: il vecchio test misurava due variabili insieme (formato **e** framework fermo) e
+attribuiva a `eips` la colpa del framework.
 
-Un'indagine successiva ha aggiunto due prove che mancavano, senza rifare i test distruttivi:
+Vincoli verificati che restano:
 
-- il PNG che il device aveva davvero scaricato (`/mnt/us/dashboard/panel.png`, 600x800: allora la
-  tela era alta 800, oggi è 720 per la barra del browser) è **`L`, 8 bit, non interlacciato**:
-  nessuna trasparenza, nessuna palette, nessun Adam7. Il formato non era la causa, quindi provare
-  altre codifiche non poteva cambiare l'esito;
-- la stringa `Image support is disabled` è **compilata dentro** `koreader/fbink` (offset 278.700):
-  il messaggio viene dal binario, non da un nostro argomento sbagliato.
+- l'immagine deve essere **8 bit**: 1-bit e palette sono rifiutati con `8bit only`;
+- il framebuffer è **600x800, 8 bpp, `grayscale: 1`, formato `Y8`** (`eips -i`), quindi il PNG `L`
+  8 bit del pannello è esattamente il formato giusto;
+- il `fbink` di KOReader resta senza supporto immagini (`Image=No`).
 
-Il percorso completo, con la matrice dei test e gli esperimenti ancora da fare, è in
-`docs/kindle4-investigation.md`. Gli strumenti (`kindle/inspect_png.py`,
-`kindle/make_test_images.py`) e le voci KUAL `Inventario`, `Test immagini (eips)`, `Mostra panel.png`
-servono a ripetere le prove **senza** fermare il framework e senza SSH.
+Per questo il browser resta la visualizzazione predefinita finché non esiste un **ciclo nativo
+collaudato** (download → verifica del PNG → disegno → ripresa), non perché il framebuffer sia
+inutilizzabile. Il percorso e la matrice dei test sono in `docs/kindle4-investigation.md`; gli
+strumenti (`kindle/inspect_png.py`, `kindle/make_test_images.py`) e le voci KUAL `Inventario`,
+`Test immagini (eips)`, `Mostra panel.png` servono a ripetere le prove **senza** fermare il framework
+e senza SSH.
 
 ---
 
