@@ -169,7 +169,7 @@ caricamento la rifiuta (e il test sull'esempio se ne accorge subito), se la dime
 
 | Comando | Cosa copre |
 |---|---|
-| `python -m pytest -q` | parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP |
+| `python -m pytest -q` | parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP, allineamento menu/comandi del device |
 | `python -m ruff check .` | stile (line-length 110, regole E/F/I/UP/B/SIM/RUF) |
 | `python -m kindle_dashboard render -o preview.png` | verifica visiva reale |
 
@@ -188,17 +188,27 @@ Confermato su un Kindle 4 (`Linux kindle 2.6.31-rt11-lab126`, FBInk lo identific
 
 - `wget` presente (`/usr/bin/wget`): il download del PNG funziona.
 - `eips` esiste ma in **`/usr/sbin/eips`** (non `/usr/bin`), e **non mostra immagini**: con quattro
-  formati (grigi, RGB, 1-bit, JPEG) lo schermo resta bianco pur con exit code 0.
+  formati (grigi, RGB, 1-bit, JPEG) lo schermo resta bianco pur con exit code 0. Il PNG scaricato
+  dal device era però già `L`, 8 bit, non interlacciato: il formato non era la causa.
 - il `fbink` incluso in KOReader è **MINIMAL**: `[FBInk] Image support is disabled in this FBInk
-  build!`.
+  build!`, e la stringa `Image support is disabled` è compilata **dentro** `koreader/fbink`
+  (offset 278.700 del binario). Non è un errore di sintassi nostro.
 - `/etc/init.d/framework stop` libera lo schermo ma porta a **schermo bianco, unità USB non più
   esposta e riavvio** del device: non è una strada percorribile qui.
 - KUAL elenca l'estensione solo se `config.xml` contiene
   `<menus><menu type="json" dynamic="true">menu.json</menu></menus>`.
+- il mount USB basta per leggere `/mnt/us` **e** `dashboard.log` anche con il framework avviato:
+  prima di aggiungere un esperimento si legge il log, non si ricomincia da capo.
 
 Conseguenza di progetto: **la visualizzazione passa dal browser** (`/panel.html` con meta refresh);
-l'estensione KUAL è solo diagnostica (`Verifica server`, `Diagnostica`). Non reintrodurre il disegno
-nativo su questo hardware senza una prova concreta che funzioni.
+l'estensione KUAL è solo diagnostica (`Verifica server`, `Diagnostica`, `Inventario`,
+`Test immagini (eips)`, `Mostra panel.png`). Nessuna voce ferma il framework, spegne il Wi-Fi o
+sospende il device. Non reintrodurre il disegno nativo su questo hardware senza una prova concreta
+che funzioni.
+
+Rapporto con le prove, fase per fase: `docs/kindle4-investigation.md` e `docs/kindle4-test-matrix.md`.
+Strumenti: `kindle/inspect_png.py` (formato/depth/interlace), `kindle/make_test_images.py` (scheda
+con timestamp + varianti in `cache/testimages`).
 
 Ancora da confermare: comportamento della batteria con la pagina aperta per ore.
 
@@ -212,7 +222,9 @@ Ancora da confermare: comportamento della batteria con la pagina aperta per ore.
 | `docs/technical-walkthrough.md` | chi studia il progetto: percorso tecnico narrato, con i bug reali |
 | `docs/venv.md` | chi sviluppa: cosa isola un venv, come crearlo, vantaggi e limiti |
 | `docs/docker.md` | chi fa deploy: scelte dell'immagine, volumi, comandi, rollback, trappole |
+| `docs/kindle4-investigation.md` | chi indaga sul percorso senza browser: architettura, prove, diagnosi, esperimenti |
+| `docs/kindle4-test-matrix.md` | chi verifica sul device: caso, stato, prova, limitazione per ogni fase |
 | `docs/preview.png` + `docs/make_preview.py` | chi scrive il README: anteprima versionata, rigenerata offline con dati inventati (`preview.png` invece è quella personale, ignorata da git) |
 | `config.example.toml` | utente: modello di configurazione commentato |
 | `tests/` | sviluppatori: comportamento atteso, da aggiornare con le modifiche |
-| `kindle/` | deploy: estensione KUAL + script host |
+| `kindle/` | deploy: estensione KUAL + script host (`deploy.ps1`, `serve.ps1`, `autostart.ps1`) e diagnostica (`inspect_png.py`, `make_test_images.py`) |

@@ -145,6 +145,15 @@ Errori realmente accaduti qui, da non ripetere:
     indicando quella giusta; `config.example.toml` viene caricato da un test, così una chiave nuova
     dimenticata nell'esempio fa rosso il gate. Quando aggiungi un'opzione aggiorna dataclass,
     `_SECTION_KEYS`, `config.example.toml` e la tabella in `README.md`: quattro posti, non tre.
+23. **Il log del device è già una prova: leggilo prima di riprovare.** Con il Kindle montato su USB
+    `G:\dashboard\dashboard.log` si legge anche con il framework avviato, e contiene già
+    `[FBInk] Image support is disabled…`, `eips … exit=0` e `framework fermato`. Senza leggerlo si
+    rifanno test rischiosi (fermare il framework, che toglie l'USB) per riscoprire cose scritte.
+    Un comando diagnostico però deve registrare **exit code e output sulla stessa riga** (come
+    `images`/`show`): il vecchio script salvava solo l'exit e non il comando, quindi l'errore non era
+    riproducibile. E `exit=0` di `eips` non prova che l'immagine sia a schermo (regola 12): la prova
+    resta visiva. Infine, una cartella citata da uno script (`cache\testimages` in `-TestImages`)
+    non è detto che esista: deve avere un generatore nel repo (`kindle/make_test_images.py`).
 
 ## §Workflow
 

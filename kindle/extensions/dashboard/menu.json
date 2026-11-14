@@ -27,6 +27,27 @@
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
 			"params": "sleep",
 			"internal": "status Riattivo il salvascherino"
+		},
+		{
+			"name": "Inventario",
+			"priority": 5,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "inventory",
+			"internal": "status Raccoglie strumenti e stato del device (sola lettura)"
+		},
+		{
+			"name": "Test immagini (eips)",
+			"priority": 6,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "images",
+			"internal": "status Disegna le varianti di formato della scheda di prova"
+		},
+		{
+			"name": "Mostra panel.png",
+			"priority": 7,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "show",
+			"internal": "status Disegna l'ultimo panel.png scaricato"
 		}
 	]
 }

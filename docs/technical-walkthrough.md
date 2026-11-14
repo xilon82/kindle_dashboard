@@ -48,6 +48,20 @@ Morale tecnica: **exit code 0 non è la prova che un'immagine sia stata disegnat
 framework toglie anche la modalità "archivio USB" (la gestisce il framework), quindi non è nemmeno
 un'uscita di sicurezza. Il browser, invece, funziona e lascia il device in uno stato normale.
 
+Un'indagine successiva ha aggiunto due prove che mancavano, senza rifare i test distruttivi:
+
+- il PNG che il device aveva davvero scaricato (`/mnt/us/dashboard/panel.png`, 600x800: allora la
+  tela era alta 800, oggi è 720 per la barra del browser) è **`L`, 8 bit, non interlacciato**:
+  nessuna trasparenza, nessuna palette, nessun Adam7. Il formato non era la causa, quindi provare
+  altre codifiche non poteva cambiare l'esito;
+- la stringa `Image support is disabled` è **compilata dentro** `koreader/fbink` (offset 278.700):
+  il messaggio viene dal binario, non da un nostro argomento sbagliato.
+
+Il percorso completo, con la matrice dei test e gli esperimenti ancora da fare, è in
+`docs/kindle4-investigation.md`. Gli strumenti (`kindle/inspect_png.py`,
+`kindle/make_test_images.py`) e le voci KUAL `Inventario`, `Test immagini (eips)`, `Mostra panel.png`
+servono a ripetere le prove **senza** fermare il framework e senza SSH.
+
 ---
 
 ## 2. Architettura
@@ -691,6 +705,7 @@ I payload veri stanno in `tests/fixtures/` (`weather_openmeteo.json`, `marine_op
 | `test_calendar.py` | `BYDAY`/`COUNT`, `EXDATE`, override `RECURRENCE-ID`, annullato, `TZID` sconosciuto, URL embed |
 | `test_waste.py` | ricorrenze e giorni della differenziata |
 | `test_server.py` | `/health`, `/panel.png`, `/panel.html`, 404, porta non rubabile, guardia anti-doppione |
+| `test_kindle_scripts.py` | `menu.json` allineato ai rami del `case`, azione deployata, template in LF |
 
 Il numero di test non è scritto qui apposta: cambia a ogni modifica e un conteggio fisso invecchia
 subito (era già successo). Il totale lo stampa `python -m pytest -q`.
@@ -729,6 +744,8 @@ subito (era già successo). Il totale lo stampa `python -m pytest -q`.
 | server | `python -m kindle_dashboard serve` |
 | trovare uno `stop_id` | `python -m kindle_dashboard resolve-station "Santa Marinella"` |
 | deploy estensione | `.\kindle\deploy.ps1 [-DryRun] [-TestImages]` |
+| ispezione PNG | `python kindle\inspect_png.py panel.png` |
+| varianti di formato per il device | `python kindle\make_test_images.py [--source panel.png] [--size 600x800]` |
 | rete + firewall (admin) | `powershell -ExecutionPolicy Bypass -File .\kindle\allow-lan.ps1 [-AnyProfile]` |
 
 ---

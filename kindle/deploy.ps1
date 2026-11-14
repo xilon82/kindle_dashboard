@@ -25,7 +25,8 @@
 
 .PARAMETER TestImages
     Copia anche le varianti di formato (cache\testimages) in <kindle>:\dashboard\test, usate dalla
-    voce di menu "Test immagini" per capire quale formato digerisce eips.
+    voce di menu "Test immagini (eips)" per capire quale formato digerisce eips. Se la cartella non
+    esiste, generarla prima con: python kindle\make_test_images.py
 #>
 [CmdletBinding()]
 param(
@@ -106,7 +107,7 @@ if ($TestImages) {
         Copy-Item -Path (Join-Path $testSource "*") -Destination $testTarget -Force
         Write-Host "varianti di test copiate in $testTarget"
     } else {
-        Write-Warning "cartella $testSource assente: rigenera preview.png e le varianti prima di usare -TestImages"
+        Write-Warning "cartella $testSource assente: generarla con python kindle\make_test_images.py"
     }
 }
 
@@ -135,5 +136,5 @@ if ($networkProfile -and $networkProfile.NetworkCategory.ToString() -eq "Public"
 
 Write-Host ""
 Write-Host "Sul PC:  python -m kindle_dashboard serve"
-Write-Host "Sul Kindle: KUAL > Dashboard > Avvia pannello"
+Write-Host "Sul Kindle: browser su http://$HostAddress`:$port/panel.html (KUAL > Dashboard per la diagnostica)"
 Write-Host "Log del device: /mnt/us/dashboard/dashboard.log"

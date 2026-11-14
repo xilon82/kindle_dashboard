@@ -299,16 +299,24 @@ raggiunge il PC. Voci:
 
 | Voce | Cosa fa |
 |---|---|
-| Verifica server | scarica `/panel.png` e scrive esito e dimensione in `/mnt/us/dashboard/dashboard.log` |
-| Diagnostica | kernel, percorsi di `wget`/`eips`, batteria, URL e poi la verifica server |
+| Verifica server | scarica `/panel.png` con timeout 10 s e scrive esito, dimensione e «è davvero un PNG» in `/mnt/us/dashboard/dashboard.log` |
+| Diagnostica | kernel, percorsi di `wget`/`eips`/`fbink`, batteria, URL e poi la verifica server |
 | Tieni schermo acceso | `lipc-set-prop com.lab126.powerd preventScreenSaver 1`: niente salvascherino mentre guardi il pannello |
 | Riattiva salvascherino | riporta la proprietà a `0` quando hai finito |
+| Inventario | sola lettura: `/etc/version`, `/proc`, `/sys`, presenza di `curl`/`file`/`rtcwake`, geometria da `eips -i`, stato Wi-Fi. Serve a capire cosa c'è su *questo* firmware |
+| Test immagini (eips) | disegna le varianti di formato di `cache\testimages` (grigi, 1 bit, RGB, palette, JPEG) senza fermare il framework |
+| Mostra panel.png | disegna l'ultimo PNG scaricato: separa il problema del download da quello del rendering |
+
+Le tre voci nuove non fermano il framework, non spengono il Wi-Fi e non sospendono il device: al
+massimo disegnano sullo schermo, e si esce da KUAL come sempre. Le varianti di formato si generano
+con `python kindle\make_test_images.py` e si copiano con `.\kindle\deploy.ps1 -TestImages`.
 
 Con il pannello aperto nel browser il Kindle va in salvascherino dopo il timeout di inattività: usa
 **Tieni schermo acceso** (vale fino al riavvio del device) e, se serve, aumenta il timeout schermo
 nelle impostazioni. L'esito del comando finisce nel log, così si vede subito se il firmware lo accetta.
 
-Il motivo per cui il disegno nativo non è la strada predefinita è documentato nei "Limiti noti".
+Il motivo per cui il disegno nativo non è la strada predefinita è documentato nei "Limiti noti" e,
+con le prove raccolte fase per fase, in [docs/kindle4-investigation.md](docs/kindle4-investigation.md).
 
 ## Comandi
 
@@ -317,9 +325,12 @@ Il motivo per cui il disegno nativo non è la strada predefinita è documentato 
 | `python -m kindle_dashboard render [-o preview.png]` | genera il PNG una volta |
 | `python -m kindle_dashboard serve` | serve `/panel.png` e `/health` |
 | `python -m kindle_dashboard resolve-station "Genova Brignole"` | trova lo `stop_id` |
-| `.\kindle\deploy.ps1` | copia l'estensione KUAL sul Kindle |
+| `.\kindle\deploy.ps1 [-DryRun] [-TestImages]` | copia l'estensione KUAL sul Kindle (con o senza le varianti di formato) |
+| `python kindle\inspect_png.py <file>` | formato, dimensione, modo, profondità e interlace di un'immagine |
+| `python kindle\make_test_images.py [--source panel.png]` | scheda di test con timestamp e varianti in `cache\testimages` |
 
-Tutti accettano `--config <file>` dopo il sottocomando.
+Tutti accettano `--config <file>` dopo il sottocomando; gli script `kindle\*.py` sono diagnostica
+locale e non leggono `config.toml`.
 
 ## Troubleshooting
 
@@ -358,6 +369,10 @@ Get-NetFirewallApplicationFilter | Where-Object { $_.Program -like '*python*' } 
   KOReader è compilato senza supporto immagini e `eips` (in `/usr/sbin`) resta bianco con PNG in
   scala di grigi, RGB, 1-bit e JPEG. Fermare il framework per liberare lo schermo porta a schermo
   bianco, unità USB non più esposta e riavvii. Per questo il pannello si guarda nel browser.
+  Il PNG che il device ha davvero scaricato è **600x800, grigi 8 bit, non interlacciato**: il formato
+  non era la causa. Prove, comandi e stato di ogni fase in
+  [docs/kindle4-investigation.md](docs/kindle4-investigation.md) e
+  [docs/kindle4-test-matrix.md](docs/kindle4-test-matrix.md).
 - Ricorrenze supportate: `FREQ` DAILY/WEEKLY/MONTHLY/YEARLY con `INTERVAL`, `COUNT`, `UNTIL` e
   `BYDAY` (solo settimanale). Altri `BY*` sono ignorati; un `TZID` sconosciuto ricade sul fuso del
   pannello.
