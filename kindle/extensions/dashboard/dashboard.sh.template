@@ -15,20 +15,39 @@ PORT="__PORT__"
 
 WORK_DIR="/mnt/us/dashboard"
 LOG="$WORK_DIR/dashboard.log"
+# Ciclo in background: il pid serve per non avviarne due (regola del pid orfano) e il file STOP per
+# fermarlo senza kill a mano. Il framework ridisegna quando KUAL esce, quindi il pannello va ripreso.
+PID_FILE="$WORK_DIR/dashboard.pid"
+STOP_FILE="$WORK_DIR/STOP"
+LOOP_SECONDS=15
 
 # KUAL lancia gli script con un PATH minimo: senza questo, "wget" puo' sembrare assente.
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
+# BusyBox 1.7.2 del Kindle non ha `command -v`: si cerca direttamente nel PATH, senza dipendere da
+# applet che questa build potrebbe non avere.
 find_cmd() {
     for candidate in "$@"; do
-        if command -v "$candidate" >/dev/null 2>&1; then
-            command -v "$candidate"
-            return 0
-        fi
-        if [ -x "$candidate" ]; then
-            echo "$candidate"
-            return 0
-        fi
+        case "$candidate" in
+            */*)
+                if [ -x "$candidate" ]; then
+                    echo "$candidate"
+                    return 0
+                fi
+                ;;
+            *)
+                old_ifs="$IFS"
+                IFS=:
+                for dir in $PATH; do
+                    if [ -x "$dir/$candidate" ]; then
+                        echo "$dir/$candidate"
+                        IFS="$old_ifs"
+                        return 0
+                    fi
+                done
+                IFS="$old_ifs"
+                ;;
+        esac
     done
     return 1
 }
@@ -64,14 +83,26 @@ battery_capacity() {
     return 1
 }
 
+# BusyBox 1.7.2 non ha `wget -T`: il timeout si ottiene con un watchdog in background, altrimenti un
+# server che non risponde lascia la voce di menu appesa per sempre.
+fetch_png() {
+    "$WGET" -q -O "$2" "$1" &
+    fetch_pid=$!
+    ( sleep 15; kill -9 "$fetch_pid" 2>/dev/null ) &
+    watchdog_pid=$!
+    wait "$fetch_pid"
+    fetch_rc=$?
+    kill "$watchdog_pid" 2>/dev/null
+    return "$fetch_rc"
+}
+
 check() {
     if [ -z "$WGET" ]; then
         log "check: wget non trovato"
         return 1
     fi
     tmp="$WORK_DIR/check.png"
-    # -T 10: senza timeout un server che non risponde lascia la voce di menu appesa per sempre.
-    if ! "$WGET" -q -T 10 -O "$tmp" "http://$HOST:$PORT/panel.png?t=$(date +%s)"; then
+    if ! fetch_png "http://$HOST:$PORT/panel.png?t=$(date +%s)" "$tmp"; then
         rm -f "$tmp"
         log "check: FALLITO http://$HOST:$PORT/panel.png (PC spento, IP cambiato o firewall)"
         return 1
@@ -116,9 +147,10 @@ report() {
 which_list() {
     found=""
     for name in curl wget eips fbink file ip ifconfig rtcwake lipc-get-prop lipc-set-prop \
-        lipc-wait-event powerd_test openssl od tail; do
-        if command -v "$name" >/dev/null 2>&1; then
-            found="$found $name=$(command -v "$name")"
+        lipc-wait-event powerd_test openssl od tail tr grep; do
+        path="$(find_cmd "$name")"
+        if [ -n "$path" ]; then
+            found="$found $name=$path"
         else
             found="$found $name=ASSENTE"
         fi
@@ -140,9 +172,11 @@ inventory() {
     report wget_help sh -c "wget --help 2>&1 | head -n 5"
     report rtc ls -l /sys/class/rtc
     report power_state cat /sys/power/state
-    report processi sh -c "ps | grep -E 'powerd|wifid|framework|cvm'"
+    report processi sh -c "ps | grep -e powerd -e wifid -e framework -e cvm"
     if [ -n "$EIPS" ]; then
         report eips_info "$EIPS" -i
+        # `eips` senza argomenti stampa l'uso di *questa* versione: serve a non inventare opzioni.
+        report eips_help "$EIPS"
     else
         log "eips_info: eips ASSENTE"
     fi
@@ -198,6 +232,53 @@ show() {
     log "show $(basename "$file") exit=$rc ${out:+-> $out}"
 }
 
+# Il framework ridisegna quando KUAL esce, quindi un'immagine disegnata una volta sparisce. Un ciclo
+# in background la riprende al giro successivo; non tocca Wi-Fi, sospensione o framework.
+loop_running() {
+    [ -f "$PID_FILE" ] || return 1
+    loop_pid="$(cat "$PID_FILE" 2>/dev/null)"
+    [ -n "$loop_pid" ] || return 1
+    kill -0 "$loop_pid" 2>/dev/null
+}
+
+start_loop() {
+    if [ -z "$EIPS" ]; then
+        log "loop: eips ASSENTE"
+        return 1
+    fi
+    if loop_running; then
+        log "loop: gia' in esecuzione (pid $(cat "$PID_FILE"))"
+        return 0
+    fi
+    rm -f "$STOP_FILE"
+    log "loop: avvio ogni $LOOP_SECONDS s"
+    (
+        # Il trap pulisce il pid anche quando lo stop uccide il processo durante il sleep.
+        trap 'rm -f "$PID_FILE"' 0
+        while [ ! -f "$STOP_FILE" ]; do
+            "$EIPS" -f -g "$WORK_DIR/panel.png" >/dev/null 2>&1
+            log "loop: disegnato panel.png"
+            sleep "$LOOP_SECONDS"
+        done
+        log "loop: terminato"
+    ) &
+    echo $! >"$PID_FILE"
+}
+
+stop_loop() {
+    if loop_running; then
+        loop_pid="$(cat "$PID_FILE")"
+        touch "$STOP_FILE"
+        # `kill` chiude subito, senza aspettare la fine del sleep: altrimenti il pannello ricopre KUAL
+        # per altri 15 s e fermare il ciclo diventa una corsa.
+        kill "$loop_pid" 2>/dev/null
+        log "loop: fermato (pid $loop_pid)"
+    else
+        rm -f "$PID_FILE"
+        log "loop: non in esecuzione"
+    fi
+}
+
 diag() {
     log "=== diag ==="
     log "uname: $(uname -a 2>&1)"
@@ -226,6 +307,12 @@ case "$1" in
     show)
         show "$2"
         ;;
+    loop)
+        start_loop
+        ;;
+    stop)
+        stop_loop
+        ;;
     awake)
         keep_awake
         ;;
@@ -233,7 +320,7 @@ case "$1" in
         allow_sleep
         ;;
     *)
-        echo "uso: $0 {check|diag|inventory|images|show [file]|awake|sleep}"
+        echo "uso: $0 {check|diag|inventory|images|show [file]|loop|stop|awake|sleep}"
         exit 2
         ;;
 esac

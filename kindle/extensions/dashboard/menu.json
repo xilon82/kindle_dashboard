@@ -48,6 +48,20 @@
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
 			"params": "show",
 			"internal": "status Disegna l'ultimo panel.png scaricato"
+		},
+		{
+			"name": "Avvia ciclo (15s)",
+			"priority": 8,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "loop",
+			"internal": "status Ridisegna panel.png in background ogni 15 secondi"
+		},
+		{
+			"name": "Ferma ciclo",
+			"priority": 9,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "stop",
+			"internal": "status Ferma il ciclo in background"
 		}
 	]
 }
