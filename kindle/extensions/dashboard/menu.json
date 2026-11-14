@@ -50,11 +50,11 @@
 			"internal": "status Disegna l'ultimo panel.png scaricato"
 		},
 		{
-			"name": "Avvia ciclo (15s)",
+			"name": "Avvia ciclo (30s)",
 			"priority": 8,
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
 			"params": "loop",
-			"internal": "status Ridisegna panel.png in background ogni 15 secondi"
+			"internal": "status Scarica e ridisegna il pannello in background ogni 30 secondi"
 		},
 		{
 			"name": "Ferma ciclo",

@@ -18,6 +18,7 @@ con `images` (§5.2). Le righe R1-R5 sono state rieseguite con il framework avvi
 | D3 | Il PNG è nel formato più semplice | **Verificato** | `kindle/inspect_png.py`: `mode=L bit_depth=8 color_type=0(grayscale) interlace=none` | vale per il file scaricato a ottobre; il renderer non è cambiato da allora (`panel.py:202`) |
 | D4 | HTTP 200 con HTML di errore invece del PNG | **Parziale** | `dashboard.sh.template` verifica dimensione ≥ 1000 B e presenza della firma `PNG` prima di dire «OK» | la verifica non ha ancora potuto passare: `check` si ferma prima, senza server in ascolto |
 | D5 | File vuoto o troncato | **Non testato** | — | richiede di servire apposta un file rotto; `check` lo intercetterebbe come «non PNG» |
+| D6 | `/panel.png?h=800` per il client nativo | **Verificato** | `requested_height` validato (test), PNG servito dal container `600x800 L 8 bit` | il disegno a 800 sul device va confermato |
 
 ## Rendering nativo
 
@@ -36,7 +37,8 @@ con `images` (§5.2). Le righe R1-R5 sono state rieseguite con il framework avvi
 | R11 | Comandi diagnostici su BusyBox 1.7.2 | **Parziale** | `inventory` ha rivelato `command -v`, `grep -E` e `wget -T` assenti; script corretto e verificato in container | la versione corretta non è ancora stata eseguita sul device |
 | R12 | `eips -g` con palette indicizzata | **Fallito (rifiutato)** | `immagine test_p.png exit=1 -> …:8bit only` | come R3 |
 | R13 | Persistenza dopo l'uscita da KUAL | **Verificato** | il ciclo ha disegnato 9 volte in 2m17s **dopo** l'uscita da KUAL | il pannello copre l'interfaccia a ogni giro |
-| R14 | Ciclo periodico con stop | **Verificato** | giro da 15 s, pid verificato (`kill -0`), stop immediato con `kill` | manca ancora il download dal PC |
+| R14 | Ciclo periodico con stop | **Verificato** | giro da 15 s prima, 30 s poi; pid verificato (`kill -0`), stop immediato con `kill`, pid rimosso | — |
+| R15 | Immagine a schermo intero (800 px) | **Parziale** | il client chiede `?h=800`; il server restituisce 600x800 (D6) | da osservare sul device: il footer di KUAL non deve più restare |
 
 ## Browser (baseline)
 
@@ -76,8 +78,8 @@ con `images` (§5.2). Le righe R1-R5 sono state rieseguite con il framework avvi
 | C3 | Server offline / IP cambiato | **Parziale** | `check` registra il fallimento e non sovrascrive l'ultima immagine valida | non eseguito sul device |
 | C4 | Errori gestiti senza lasciare il device in stato strano | **Parziale** | nessuna voce tocca framework, Wi-Fi o sospensione | vale per la diagnostica, non per un ciclo nativo |
 | C5 | Rollback | **Verificato per costruzione** | nessuna voce di avvio automatico: il ciclo si ferma con **Ferma ciclo** e il browser non richiede installazione | il file `STOP` resta finché non si riavvia il ciclo (che lo rimuove) |
-| C6 | Ciclo di disegno periodico senza download | **Verificato** | 9 disegni a 15 s in 2m17s, dopo l'uscita da KUAL | ridisegna sempre lo stesso `panel.png` del 31/10 |
-| C7 | Uso dell'interfaccia mentre il ciclo gira | **Parziale** | il pannello copre KUAL a ogni giro; lo stop ora è immediato | resta una corsa fra due disegni: per un uso reale serve l'intervallo di `refresh_seconds` |
+| C6 | Ciclo periodico con download | **Verificato** | 6 giri a 30 s (~3 min) con `scaricato` + `disegnato`, stop immediato, pid rimosso | cadenza da test (30 s), non quella reale di `refresh_seconds` |
+| C7 | Uso dell'interfaccia mentre il ciclo gira | **Parziale** | il pannello copre KUAL a ogni giro; lo stop è immediato; warm-up di 3 disegni a 5 s | resta una corsa fra due disegni: per un uso reale serve l'intervallo di `refresh_seconds` |
 
 ## Come aggiornare questa matrice
 

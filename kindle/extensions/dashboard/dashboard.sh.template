@@ -19,7 +19,11 @@ LOG="$WORK_DIR/dashboard.log"
 # fermarlo senza kill a mano. Il framework ridisegna quando KUAL esce, quindi il pannello va ripreso.
 PID_FILE="$WORK_DIR/dashboard.pid"
 STOP_FILE="$WORK_DIR/STOP"
-LOOP_SECONDS=15
+# 30 s: abbastanza per fermare il ciclo fra due disegni, abbastanza rado da non martellare le fonti.
+LOOP_SECONDS=30
+# Il framebuffer e' 600x800, mentre la tela servita al browser e' 600x720 (barra degli indirizzi):
+# il client nativo chiede l'altezza piena, altrimenti gli ultimi 80 px restano quelli di KUAL.
+NATIVE_HEIGHT=800
 
 # KUAL lancia gli script con un PATH minimo: senza questo, "wget" puo' sembrare assente.
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
@@ -57,6 +61,12 @@ EIPS="$(find_cmd eips /usr/bin/eips /usr/sbin/eips)"
 # Il fbink di KOReader e' compilato MINIMAL (senza supporto immagini) ma resta l'unico presente sul
 # device: cercarlo serve a documentare *quale* build si sta provando, non a usarlo.
 FBINK="$(find_cmd fbink /mnt/us/koreader/fbink /usr/bin/fbink)"
+
+# URL per il client nativo: `h` chiede la tela 600x800, quella del framebuffer, invece dei 600x720
+# pensati per il browser. Il timestamp evita di ridisegnare un file gia' visto.
+panel_url() {
+    printf 'http://%s:%s/panel.png?t=%s&h=%s' "$HOST" "$PORT" "$(date +%s)" "$NATIVE_HEIGHT"
+}
 
 mkdir -p "$WORK_DIR"
 
@@ -96,26 +106,62 @@ fetch_png() {
     return "$fetch_rc"
 }
 
+# Firma PNG senza dipendere dal `grep` sui file binari: BusyBox 1.37 (nel container) restituisce 1
+# su un PNG valido, BusyBox 1.7.2 (sul Kindle) lo accetta. Si confrontano i primi 4 byte, con un
+# ripiego sul testo "PNG" a partire dal secondo byte.
+is_png() {
+    magic="$(head -c 4 "$1" 2>/dev/null)"
+    if [ -n "$magic" ]; then
+        [ "$magic" = "$(printf '\211PNG')" ]
+        return $?
+    fi
+    if [ "$(tail -c +2 "$1" 2>/dev/null | head -c 3)" = "PNG" ]; then
+        return 0
+    fi
+    grep -q PNG "$1"
+}
+
+# Il pannello si scarica in un file temporaneo e sostituisce quello buono solo se è davvero un PNG:
+# un errore HTML o un file troncato non devono cancellare l'ultima immagine valida.
+update_panel() {
+    tmp="$WORK_DIR/panel.new"
+    if ! fetch_png "$(panel_url)" "$tmp"; then
+        rm -f "$tmp"
+        log "loop: download fallito (tengo l'ultimo panel.png)"
+        return 1
+    fi
+    size=$(wc -c <"$tmp")
+    if [ "$size" -lt 1000 ] || ! is_png "$tmp"; then
+        rm -f "$tmp"
+        log "loop: download non PNG ($size byte, tengo l'ultimo panel.png)"
+        return 1
+    fi
+    mv "$tmp" "$WORK_DIR/panel.png"
+    log "loop: scaricato panel.png ($size byte)"
+    return 0
+}
+
 check() {
     if [ -z "$WGET" ]; then
         log "check: wget non trovato"
         return 1
     fi
     tmp="$WORK_DIR/check.png"
-    if ! fetch_png "http://$HOST:$PORT/panel.png?t=$(date +%s)" "$tmp"; then
+    url="$(panel_url)"
+    if ! fetch_png "$url" "$tmp"; then
         rm -f "$tmp"
-        log "check: FALLITO http://$HOST:$PORT/panel.png (PC spento, IP cambiato o firewall)"
+        log "check: FALLITO $url (PC spento, IP cambiato o firewall)"
         return 1
     fi
     size=$(wc -c <"$tmp")
     # Un HTTP 200 puo' contenere una pagina d'errore: senza questa prova il log direbbe "OK" anche
     # quando il file scaricato non e' un'immagine.
-    if [ "$size" -lt 1000 ] || ! grep -q PNG "$tmp"; then
+    if [ "$size" -lt 1000 ] || ! is_png "$tmp"; then
         rm -f "$tmp"
-        log "check: risposta non PNG ($size byte) da http://$HOST:$PORT/panel.png"
+        log "check: risposta non PNG ($size byte) da $url"
         return 1
     fi
-    log "check: OK http://$HOST:$PORT/panel.png ($size byte)"
+    log "check: OK $url ($size byte)"
     rm -f "$tmp"
     return 0
 }
@@ -241,6 +287,11 @@ loop_running() {
     kill -0 "$loop_pid" 2>/dev/null
 }
 
+# Disegna il pannello gia' scaricato (senza rete: serve anche al warm-up).
+draw_panel() {
+    "$EIPS" -f -g "$WORK_DIR/panel.png" >/dev/null 2>&1
+}
+
 start_loop() {
     if [ -z "$EIPS" ]; then
         log "loop: eips ASSENTE"
@@ -255,8 +306,18 @@ start_loop() {
     (
         # Il trap pulisce il pid anche quando lo stop uccide il processo durante il sleep.
         trap 'rm -f "$PID_FILE"' 0
+        # Dopo l'uscita di KUAL il framework ridisegna la home (prima il menu, poi la minibar con
+        # Wi-Fi e batteria): i primi secondi servono refresh ravvicinati, altrimenti l'immagine resta
+        # coperta per uno o due giri. Lo stop uccide comunque il processo subito.
+        update_panel
+        for _ in 1 2 3; do
+            draw_panel
+            log "loop: disegnato panel.png (warm-up)"
+            sleep 5
+        done
         while [ ! -f "$STOP_FILE" ]; do
-            "$EIPS" -f -g "$WORK_DIR/panel.png" >/dev/null 2>&1
+            update_panel
+            draw_panel
             log "loop: disegnato panel.png"
             sleep "$LOOP_SECONDS"
         done
@@ -272,6 +333,9 @@ stop_loop() {
         # `kill` chiude subito, senza aspettare la fine del sleep: altrimenti il pannello ricopre KUAL
         # per altri 15 s e fermare il ciclo diventa una corsa.
         kill "$loop_pid" 2>/dev/null
+        # Il trap non scatta sul `kill` in ash: il pid va rimosso qui, altrimenti resta orfano e un
+        # pid riusato da un altro processo farebbe credere al ciclo ancora attivo.
+        rm -f "$PID_FILE"
         log "loop: fermato (pid $loop_pid)"
     else
         rm -f "$PID_FILE"
@@ -285,6 +349,7 @@ diag() {
     log "wget: ${WGET:-ASSENTE} | eips: ${EIPS:-ASSENTE} | fbink: ${FBINK:-ASSENTE}"
     log "batteria: $(battery_capacity 2>/dev/null || echo sconosciuta)%"
     log "url pannello: http://$HOST:$PORT/panel.html"
+    log "url nativa: $(panel_url)"
     check
     log "=== fine diag ==="
 }

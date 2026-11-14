@@ -252,6 +252,35 @@ Conclusioni:
   KUAL è raggiungibile solo nella finestra fra due disegni. Per un ciclo reale l'intervallo deve
   venire da `refresh_seconds` (90 s di giorno, 3600 s di notte) e lo stop deve restare immediato.
 
+### 5.4 Il fondo dello schermo resta di KUAL: 720 contro 800 (2026-11-14)
+
+Il primo ciclo con download ha mostrato due difetti visivi, entrambi spiegati:
+
+- all'avvio il pannello compariva **con il menu di KUAL ancora sovrapposto** per un istante: è la
+  transizione del menu, coperta dal refresh successivo;
+- a regime restava in fondo **«pagina 1 di 2»**: la tela servita al browser è **600x720**, il
+  framebuffer è **600x800**, quindi `eips` disegna i primi 720 px e lascia gli ultimi 80 con quello
+  che c'era (il footer del menu). Non è un difetto di `eips`.
+
+Correzione: il server accetta `?h=NNN` (200-1600, validato) e il client nativo chiede **`h=800`**.
+Verificato sul container: `panel.png?h=800` → `600x800`, `L`, 8 bit. Il browser resta a 720: la
+configurazione non cambia e l'endpoint senza parametro si comporta come prima.
+
+### 5.5 La minibar della home copre il pannello per i primi secondi (2026-11-14)
+
+Osservazione sul device, con il ciclo a 30 s: al primo disegno si vede il pannello con la riga del
+menu di KUAL; al giro successivo compare la **minibar** della home (nome del device, Wi-Fi, batteria);
+dal terzo giro l'immagine resta pulita.
+
+Spiegazione: il framebuffer **non è in esclusiva**. Quando KUAL esce, il framework ridisegna la home
+e aggiorna la sua barra di stato; ogni `eips` scrive l'immagine, ma un ridisegno successivo del
+framework la copre. Quando la home si è «quetata» (Wi-Fi e batteria non cambiano più) non ci sono
+altri ridisegni e il pannello resta. Non è un difetto di `eips` né del PNG.
+
+Mitigazione: **warm-up** di 3 disegni a 5 s (senza nuovi download) subito dopo l'avvio, poi la
+cadenza normale. Non elimina la corsa, la riduce a pochi secondi; lo stop resta immediato perché
+uccide il processo.
+
 ## 6. Diagnosi per fase
 
 | Fase | Stato | Prova / motivo |
@@ -267,8 +296,9 @@ Conclusioni:
 | Disegno con `fbink` di KOReader | **Fallito** | `FBInk 92e1270 … Image=No`: build senza supporto immagini |
 | Framework fermato per liberare lo schermo | **Fallito e rischioso** | schermo bianco, USB non più esposta, riavvio; **falsava** il test `eips` (§5.2) |
 | Persistenza del disegno dopo l'uscita da KUAL | **Verificato** | il ciclo `loop` ha disegnato 9 volte in 2m17s **dopo** l'uscita da KUAL (§5.3) |
+| Copertura dell'intero framebuffer | **Parziale** | il server serve `?h=800` (600x800 `L`, verificato); il disegno a schermo intero va confermato sul device (§5.4) |
 | Ciclo di disegno periodico (senza download) | **Verificato** | giro da 15 s, pid verificato con `kill -0`, stop immediato |
-| Interazione con l'interfaccia Amazon | **Parziale** | il pannello copre KUAL a ogni giro: l'interfaccia si usa solo fra due disegni |
+| Interazione con l'interfaccia Amazon | **Parziale** | il pannello copre KUAL a ogni giro: l'interfaccia si usa solo fra due disegni; warm-up di 3 disegni a 5 s per ridurre la sovrapposizione iniziale (§5.5) |
 | Browser | **Verificato dall'uso reale** | pagina con meta refresh e PNG statico; nessun JS |
 | Wi-Fi: stato radio (lettura) | **Verificato** | `lipc-get-prop com.lab126.wifid cmState` → `CONNECTED` |
 | Wi-Fi on/off | **Non testato** | nessun comando eseguito; nessuno script di questa branch spegne la radio |
@@ -333,17 +363,13 @@ le due tele dello stesso contenuto si può generare un PNG 600x720 e uno 600x800
 `config` di prova che ha `height = 800`, senza toccare quello di produzione), ma il test decisivo è
 già passato.
 
-### E4 — Ciclo con download dal PC (prossimo)
+### E4 — Ciclo con download dal PC (fatto il 2026-11-14)
 
-Il ciclo attuale ridisegna lo stesso `panel.png` (contenuto del 31/10). Il passo successivo è
-scaricarlo dal server a ogni giro, con le stesse regole di `check`: file temporaneo, verifica
-dimensione+firma PNG, poi `eips`. Servono:
-
-- **server acceso** sul PC (`python -m kindle_dashboard serve`) e raggiungibile dal device:
-  prima si prova **KUAL → Verifica server**; se fallisce per firewall, `kindle\allow-lan.ps1` da
-  PowerShell **amministratore** (la rete è `Public`, regola `Private` inapplicabile);
-- nessuna gestione Wi-Fi in questo passo: il device è già connesso (`cmState CONNECTED`);
-- stop immediato fra un giro e l'altro, come ora.
+Il ciclo ora scarica a ogni giro, valida (dimensione + firma PNG) e disegna; un errore di rete lascia
+l'ultima immagine buona. Prove: `check: OK` (30.109 byte), poi **6 giri** `scaricato panel.png` +
+`disegnato panel.png` a 30 s in circa 3 minuti, con stop immediato e pid rimosso. Il server gira nel
+**container** (`docker compose`), non nel venv. Il primo giro ha rivelato il difetto del fondo
+schermo (720 contro 800), risolto in §5.4. Restano Wi-Fi e RTC (E6-E7).
 
 ### E5 — Solo se serve: help e versione di `eips`
 
