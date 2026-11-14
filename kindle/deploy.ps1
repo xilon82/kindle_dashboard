@@ -11,7 +11,9 @@
     Unita' del Kindle, es. "G:\". Se omessa viene cercata automaticamente.
 
 .PARAMETER HostAddress
-    IP del PC raggiungibile dal Kindle. Se omesso viene preso il primo IPv4 non loopback.
+    IP del PC raggiungibile dal Kindle. Se omesso viene preso l'IPv4 della scheda che regge la rotta
+    di default: con Docker/WSL attivi il primo IPv4 dell'elenco è un adattatore virtuale che il
+    Kindle non può raggiungere.
 
 .PARAMETER OpenFirewall
     Crea la regola firewall in ingresso per la porta del pannello (richiede PowerShell admin).
@@ -64,6 +66,19 @@ if (-not $KindleDrive) {
     $KindleDrive = $drive.Root
 }
 
+if (-not $HostAddress) {
+    # Con Docker/WSL attivi il primo IPv4 dell'elenco e' un adattatore virtuale (192.168.208.x) senza
+    # gateway: il Kindle non lo raggiunge. La scheda giusta e' quella della rotta di default, cioe' la
+    # rete con cui il PC esce davvero.
+    $defaultRoute = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
+        Sort-Object RouteMetric, InterfaceMetric |
+        Select-Object -First 1
+    if ($defaultRoute) {
+        $HostAddress = Get-NetIPAddress -InterfaceIndex $defaultRoute.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notlike "169.254.*" } |
+            Select-Object -First 1 -ExpandProperty IPAddress
+    }
+}
 if (-not $HostAddress) {
     $HostAddress = Get-NetIPAddress -AddressFamily IPv4 |
         Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } |
