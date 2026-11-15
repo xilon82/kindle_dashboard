@@ -173,6 +173,21 @@ Errori realmente accaduti qui, da non ripetere:
     solo opzioni presenti in quel `--help`; il BusyBox 1.37 del container **non** è una prova di
     compatibilità. Timeout senza `timeout`/`-T`: watchdog `( sleep 15; kill -9 $pid ) &`; per cercare
     un eseguibile si scorre il `PATH` a mano; per più pattern `grep -e … -e …`.
+26. **Il risveglio RTC del K4 passa da `rtc1`, non da `powerd`.** `powerd` non ha proprietà RTC: nove
+    nomi (`rtcWakeup`, `rtcWakeUp`, `wakeupTime`, `alarmTime`, `rtcAlarm`, `wakeupTimer`,
+    `rtcWakeupTime`, `rtcTimer`, `wakeupTimeSec`) rifiutati con e senza `-i`. `rtc0` (`mxc_rtc`) non
+    espone `wakealarm`; `rtc1` (`pmic_rtc`) sì, ma **conta dall'accensione** (`since_epoch`): si
+    scrive `since_epoch + N`, non un epoch Unix. La **rilettura di `wakealarm` è vuota** (il driver
+    non la supporta) e non significa che l'allarme non sia armato: la prova è sospendere
+    (`echo mem > /sys/power/state`) e vedere se si risveglia — verificato 61 s con uptime continuo.
+    Attenzione a `powerd_test`: **`-h` non è help**, simula «power button held» e spegne lo schermo;
+    per lo stato si usa `-s`. `powerd` entra da solo in standby dopo ~600 s di inattività.
+27. **Una graffa dimenticata nello script del device non produce errori visibili.** `sh` esce con
+    «syntax error: unexpected end of file» prima di scrivere nel log, KUAL torna al menu e sembra che
+    il comando non faccia nulla: è costato un pomeriggio di test inutili (KUAL «non esegue», «cache»,
+    «permessi»). Due difese: `tests/test_kindle_scripts.py::test_function_braces_are_balanced` e
+    `sh -n` sul file **renderizzato** in container prima di ogni deploy (`docker run --rm -v
+    …:/w:ro nginx:alpine sh -n /w/render-check.sh`). Il gate pytest da solo non vede la sintassi sh.
 
 ## §Workflow
 

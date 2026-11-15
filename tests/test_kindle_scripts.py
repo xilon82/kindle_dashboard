@@ -18,7 +18,8 @@ TEMPLATE = EXTENSION / "dashboard.sh.template"
 MENU = EXTENSION / "menu.json"
 DEPLOYED_ACTION = "/mnt/us/extensions/dashboard/dashboard.sh"
 # I rami del `case "$1" in` sono indentati di quattro spazi e finiscono con ``)``.
-_COMMAND_PATTERN = re.compile(r"^    ([a-z]+)\)$", re.MULTILINE)
+# Accettiamo lettere minuscole e underscore (es. wifi_off, wifi_on).
+_COMMAND_PATTERN = re.compile(r"^    ([a-z_]+)\)$", re.MULTILINE)
 
 
 def _commands() -> set[str]:
@@ -51,3 +52,19 @@ def test_template_uses_lf_and_ends_with_newline() -> None:
     raw = TEMPLATE.read_bytes()
     assert b"\r\n" not in raw
     assert raw.endswith(b"\n")
+
+
+def test_function_braces_are_balanced() -> None:
+    """Una `}` dimenticata non produce nessun errore visibile sul device: `sh` esce subito con
+    «syntax error: unexpected end of file» e KUAL torna al menu, quindi sembra che il comando non
+    faccia niente. È già successo con `inventory`; qui si controlla il bilanciamento delle graffe
+    nello stile del file (`nome() {` a inizio riga, `}` da solo a chiudere).
+    """
+    depth = 0
+    for number, line in enumerate(TEMPLATE.read_text(encoding="utf-8").splitlines(), start=1):
+        if line.endswith("() {") and line[0].isalpha():
+            depth += 1
+        elif line == "}":
+            depth -= 1
+            assert depth >= 0, f"graffa di chiusura in più alla riga {number}"
+    assert depth == 0, f"{depth} funzione/i non chiusa/e nel template"
