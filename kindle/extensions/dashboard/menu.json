@@ -62,6 +62,62 @@
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
 			"params": "stop",
 			"internal": "status Ferma il ciclo in background"
+		},
+		{
+			"name": "Wi-Fi off",
+			"priority": 10,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "wifi_off",
+			"internal": "status Spegne la radio Wi-Fi (wirelessEnable 0)"
+		},
+		{
+			"name": "Wi-Fi on",
+			"priority": 11,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "wifi_on",
+			"internal": "status Riaccende la radio Wi-Fi (wirelessEnable 1) e aspetta CONNECTED"
+		},
+		{
+			"name": "Test Wi-Fi cycle",
+			"priority": 12,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "wifi_cycle",
+			"internal": "status Spegne e riaccende il Wi-Fi misurando il tempo per tornare a CONNECTED"
+		},
+		{
+			"name": "Suspend RTC (60s)",
+			"priority": 13,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "suspend_rtc 60",
+			"internal": "status Programma risveglio RTC tra 60 secondi e sospende il device"
+		},
+		{
+			"name": "Resume check",
+			"priority": 14,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "resume_check",
+			"internal": "status Verifica che il device sia risvegliato correttamente"
+		},
+		{
+			"name": "Test RTC cycle (60s)",
+			"priority": 15,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "rtc_cycle 60",
+			"internal": "status Programma risveglio RTC tra 60s e sospende (device si sveglia da solo)"
+		},
+		{
+			"name": "RTC info (sola lettura)",
+			"priority": 16,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "rtc_info",
+			"internal": "status Legge name/since_epoch/wakealarm di rtc0 e rtc1"
+		},
+		{
+			"name": "RTC test arm (120s)",
+			"priority": 17,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "rtc_arm 120",
+			"internal": "status Arma l'allarme a 120s e rilegge, senza sospendere"
 		}
 	]
 }

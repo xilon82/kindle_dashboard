@@ -369,7 +369,8 @@ Il ciclo ora scarica a ogni giro, valida (dimensione + firma PNG) e disegna; un 
 l'ultima immagine buona. Prove: `check: OK` (30.109 byte), poi **6 giri** `scaricato panel.png` +
 `disegnato panel.png` a 30 s in circa 3 minuti, con stop immediato e pid rimosso. Il server gira nel
 **container** (`docker compose`), non nel venv. Il primo giro ha rivelato il difetto del fondo
-schermo (720 contro 800), risolto in §5.4. Restano Wi-Fi e RTC (E6-E7).
+schermo (720 contro 800), risolto in §5.4 con `h=800`; il warm-up (3×5 s) nasconde la minibar
+della home. **E4 chiuso**. Restano Wi-Fi e RTC (E6-E7).
 
 ### E5 — Solo se serve: help e versione di `eips`
 

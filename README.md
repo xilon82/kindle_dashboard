@@ -312,7 +312,14 @@ raggiunge il PC. Voci:
 | Test immagini (eips) | disegna le varianti di formato di `cache\testimages` (grigi, 1 bit, RGB, palette, JPEG) senza fermare il framework |
 | Mostra panel.png | disegna l'ultimo PNG scaricato: separa il problema del download da quello del rendering |
 | Avvia ciclo (30s) | scarica `panel.png` dal PC e lo ridisegna in background ogni 30 s, con pid verificato: un download fallito lascia l'ultima immagine buona |
-| Ferma ciclo | ferma il ciclo in modo immediato (`kill`) e rimuove il pid |
+| Wi-Fi off | spegne la radio Wi-Fi (`lipc-set-prop com.lab126.cmd wirelessEnable 0`) |
+| Wi-Fi on | riaccende la radio e aspetta `CONNECTED` (timeout 60 s) |
+| Test Wi-Fi cycle | spegne e riaccende il Wi-Fi misurando il tempo per tornare a `CONNECTED` |
+| Suspend RTC (60s) | scrive `since_epoch+60` in `rtc1/wakealarm`, entra in standby e registra il risveglio (verificato: 61 s, uptime continuo) |
+| Resume check | registra che il device è risvegliato e lo stato del Wi-Fi |
+| Test RTC cycle (60s) | come sopra, in un comando solo |
+| RTC info (sola lettura) | `name`, `since_epoch` e `wakealarm` di `rtc0` e `rtc1` |
+| RTC test arm (120s) | arma l'allarme a 120 s e lo rilegge, **senza** sospendere: prova che il driver accetta il valore |
 
 Nessuna di queste voci ferma il framework, spegne il Wi-Fi o sospende il device: al massimo disegnano
 sullo schermo. Mentre il ciclo gira il pannello copre l'interfaccia a ogni giro, quindi KUAL si

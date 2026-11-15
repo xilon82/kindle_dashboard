@@ -38,7 +38,7 @@ con `images` (§5.2). Le righe R1-R5 sono state rieseguite con il framework avvi
 | R12 | `eips -g` con palette indicizzata | **Fallito (rifiutato)** | `immagine test_p.png exit=1 -> …:8bit only` | come R3 |
 | R13 | Persistenza dopo l'uscita da KUAL | **Verificato** | il ciclo ha disegnato 9 volte in 2m17s **dopo** l'uscita da KUAL | il pannello copre l'interfaccia a ogni giro |
 | R14 | Ciclo periodico con stop | **Verificato** | giro da 15 s prima, 30 s poi; pid verificato (`kill -0`), stop immediato con `kill`, pid rimosso | — |
-| R15 | Immagine a schermo intero (800 px) | **Parziale** | il client chiede `?h=800`; il server restituisce 600x800 (D6) | da osservare sul device: il footer di KUAL non deve più restare |
+| R15 | Immagine a schermo intero (800 px) | **Verificato** | 600x800 `L` sul device, PNG `h=800` dal server, warm-up elimina la minibar | la minabar della home non è nostra; si può riservare spazio in alto (§5.5) |
 
 ## Browser (baseline)
 

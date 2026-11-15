@@ -233,7 +233,21 @@ inventory() {
     fi
     report wifi_state lipc-get-prop com.lab126.wifid cmState
     report screen_saver lipc-get-prop com.lab126.powerd preventScreenSaver
-    log "=== fine inventario ==="
+    # Stato dei due RTC in sola lettura. `rtc0` e' `mxc_rtc`, `rtc1` e' `pmic_rtc` ed e' l'unico con
+    # `wakealarm`: la scrittura pero' non arma l'allarme (verificato: write_rc=0, rilettura vuota) e
+    # `powerd` non espone nessuna proprieta' RTC (9 nomi testati, tutti rifiutati).
+    rtc_info
+    report rtc_wakeup sh -c 'for r in /sys/class/rtc/rtc0 /sys/class/rtc/rtc1; do printf "%s " "$r"; cat "$r/device/power/wakeup" 2>/dev/null || echo assente; done'
+    report powerd_status sh -c "powerd_test -s 2>&1 | head -n 10"
+    report dmesg sh -c "dmesg 2>/dev/null | tail -n 15"
+    # Uso reale di powerd_test: e' il meccanismo nativo Lab126 e non va inventato. Senza argomenti
+    # stampa l'uso; `-h` NON e' help ma "simula power button held" (spegne lo schermo): si usa `s`,
+    # che stampa solo lo stato.
+    report powerd_usage sh -c "powerd_test 2>&1 | head -n 25"
+    report powerd_status sh -c "powerd_test -s 2>&1 | head -n 10"
+    # Il wake da RTC dipende dall'abilitazione del device: `enabled` qui, non l'allarme.
+    # Apici singoli: dentro i doppi `$r` verrebbe espanso dal chiamante (e arriverebbe vuoto).
+    report rtc_wakeup sh -c 'for r in /sys/class/rtc/rtc0 /sys/class/rtc/rtc1; do printf "%s " "$r"; cat "$r/device/power/wakeup" 2>/dev/null || echo assente; done'
 }
 
 # Disegna le varianti di formato con eips, una per volta. Non ferma il framework e non spegne
@@ -343,6 +357,147 @@ stop_loop() {
     fi
 }
 
+# Legge lo stato del Wi-Fi (CONNECTED, DISCONNECTED, etc.).
+wifi_state() {
+    lipc-get-prop com.lab126.wifid cmState 2>/dev/null | tr -d '\r\n'
+}
+
+# Spegne la radio Wi-Fi.
+wifi_off() {
+    if ! lipc-set-prop com.lab126.cmd wirelessEnable 0 2>&1; then
+        log "wifi_off: fallito"
+        return 1
+    fi
+    log "wifi_off: richiesto"
+    return 0
+}
+
+# Riaccende la radio Wi-Fi e aspetta CONNECTED (timeout 60 s).
+wifi_on() {
+    if ! lipc-set-prop com.lab126.cmd wirelessEnable 1 2>&1; then
+        log "wifi_on: fallito"
+        return 1
+    fi
+    log "wifi_on: richiesto, attesa CONNECTED..."
+    local timeout=60
+    while [ $timeout -gt 0 ]; do
+        state=$(wifi_state)
+        if [ "$state" = "CONNECTED" ]; then
+            log "wifi_on: CONNECTED (dopo $((60 - timeout)) s)"
+            return 0
+        fi
+        sleep 2
+        timeout=$((timeout - 2))
+    done
+    log "wifi_on: timeout, stato=$state"
+    return 1
+}
+
+# Esegue un ciclo completo off -> on misurando il tempo.
+wifi_cycle() {
+    log "wifi_cycle: inizio"
+    local start=$(date +%s)
+    wifi_off || return 1
+    sleep 3
+    wifi_on || return 1
+    local end=$(date +%s)
+    log "wifi_cycle: completato in $((end - start)) s"
+    return 0
+}
+
+# RTC del device, in sola lettura. Sul Kindle 4 `rtc1` e' `pmic_rtc` ed e' l'unico con `wakealarm`:
+# `rtc0` (`mxc_rtc`) non lo espone, e `powerd` non ha nessuna proprieta' RTC (tutte rifiutate).
+RTC_DIR="/sys/class/rtc/rtc1"
+RTC_WAKEALARM="$RTC_DIR/wakealarm"
+
+rtc_info() {
+    for rtc in /sys/class/rtc/rtc0 /sys/class/rtc/rtc1; do
+        name="$(cat "$rtc/name" 2>/dev/null)"
+        since="$(cat "$rtc/since_epoch" 2>/dev/null)"
+        alarm="$(cat "$rtc/wakealarm" 2>/dev/null)"
+        log "rtc_info: $rtc name=$name since_epoch=$since wakealarm=${alarm:-vuoto}"
+    done
+}
+
+# Arma l'allarme e rilegge, **senza** sospendere: prova che il driver accetta il valore nel suo
+# tempo. Se non e' sospeso, un allarme che scade non fa nulla.
+rtc_arm() {
+    seconds=${1:-120}
+    base="$(cat "$RTC_DIR/since_epoch" 2>/dev/null)"
+    wake_ts=$((base + seconds))
+    echo 0 >"$RTC_WAKEALARM" 2>/tmp/rtc_err
+    err_disarm="$(cat /tmp/rtc_err 2>/dev/null)"
+    if echo "$wake_ts" >"$RTC_WAKEALARM" 2>/tmp/rtc_err; then
+        rc=0
+    else
+        rc=$?
+    fi
+    err="$(cat /tmp/rtc_err 2>/dev/null)"
+    armed="$(cat "$RTC_WAKEALARM" 2>/dev/null)"
+    log "rtc_arm: base=$base wake_ts=$wake_ts write_rc=$rc err=${err:-nessuno} disarm_err=${err_disarm:-nessuno} riletto=${armed:-vuoto}"
+    rm -f /tmp/rtc_err
+}
+
+# Programma il risveglio e sospende. Il timestamp va scritto in `rtc1/wakealarm` **nel tempo di
+# quel RTC**, non in epoch Unix: `rtc1` (`pmic_rtc`) ha `since_epoch=2498`, cioe' conta
+# dall'accensione, quindi un epoch Unix viene scartato dal driver (rilettura vuota). Si parte da
+# `since_epoch` e si aggiungono i secondi. Senza `powerd` l'ingresso in standby si chiede al kernel.
+# Al risveglio lo script riprende e lo registra: e' la prova che la ripresa funziona.
+suspend_rtc() {
+    seconds=${1:-60}
+    if [ ! -f "$RTC_WAKEALARM" ]; then
+        log "suspend_rtc: $RTC_WAKEALARM assente"
+        return 1
+    fi
+    base="$(cat "$RTC_DIR/since_epoch" 2>/dev/null)"
+    case "$base" in
+        '' | *[!0-9]*)
+            log "suspend_rtc: since_epoch non leggibile ($base)"
+            return 1
+            ;;
+    esac
+    wake_ts=$((base + seconds))
+    # `0` disarma un allarme eventualmente rimasto da un test precedente.
+    echo 0 >"$RTC_WAKEALARM" 2>/dev/null
+    if ! echo "$wake_ts" >"$RTC_WAKEALARM" 2>&1; then
+        log "suspend_rtc: scrittura di $wake_ts in $RTC_WAKEALARM fallita"
+        return 1
+    fi
+    armed="$(cat "$RTC_WAKEALARM" 2>/dev/null)"
+    log "suspend_rtc: base=$base wakealarm=$wake_ts (tra $seconds s), riletto=${armed:-vuoto}"
+    if [ -z "$armed" ]; then
+        # `pmic_rtc` non supporta la rilettura: la scrittura non da errore ma `cat` torna vuoto.
+        # Si prova comunque, perche' e' l'unico modo di sapere se l'allarme e' stato armato.
+        log "suspend_rtc: rilettura non supportata dal driver, provo comunque la sospensione"
+    fi
+    log "suspend_rtc: sospensione..."
+    echo mem >/sys/power/state 2>&1
+    # Da qui si riprende solo dopo il risveglio: la riga seguente e' la prova della ripresa.
+    log "suspend_rtc: risvegliato, uptime=$(cat /proc/uptime 2>/dev/null)"
+    return 0
+}
+
+# Verifica se l'ultimo risveglio è stato da RTC (lettura approssimativa via powerd_test).
+# Su Kindle 4 powerd_test -s mostra lo stato corrente; qui leggiamo solo che siamo vivi.
+resume_check() {
+    log "resume_check: device risvegliato"
+    state=$(wifi_state)
+    log "resume_check: wifi_state=$state"
+    return 0
+}
+
+# Esegue un ciclo completo: programma risveglio RTC, sospende, e al risveglio verifica.
+# Attenzione: il device si spegne davvero; lo script non continua dopo la sospensione.
+# Questa funzione serve solo a programmare e lanciare la sospensione; al risveglio
+# il device riparte da KUAL o dalla home, non da qui.
+rtc_suspend_cycle() {
+    local seconds=${1:-60}
+    log "rtc_cycle: programmazione risveglio tra $seconds secondi e sospensione"
+    suspend_rtc "$seconds" || return 1
+    # Non torniamo qui: il device si sveglia da solo e riparte da KUAL/home.
+    return 0
+}
+
 diag() {
     log "=== diag ==="
     log "uname: $(uname -a 2>&1)"
@@ -378,6 +533,30 @@ case "$1" in
     stop)
         stop_loop
         ;;
+    wifi_off)
+        wifi_off
+        ;;
+    wifi_on)
+        wifi_on
+        ;;
+    wifi_cycle)
+        wifi_cycle
+        ;;
+    rtc_info)
+        rtc_info
+        ;;
+    rtc_arm)
+        rtc_arm "${2:-120}"
+        ;;
+    suspend_rtc)
+        suspend_rtc "${2:-60}"
+        ;;
+    resume_check)
+        resume_check
+        ;;
+    rtc_cycle)
+        rtc_suspend_cycle "${2:-60}"
+        ;;
     awake)
         keep_awake
         ;;
@@ -385,7 +564,7 @@ case "$1" in
         allow_sleep
         ;;
     *)
-        echo "uso: $0 {check|diag|inventory|images|show [file]|loop|stop|awake|sleep}"
+        echo "uso: $0 {check|diag|inventory|images|show [file]|loop|stop|wifi_off|wifi_on|wifi_cycle|rtc_info|rtc_arm|suspend_rtc|resume_check|rtc_cycle|awake|sleep}"
         exit 2
         ;;
 esac

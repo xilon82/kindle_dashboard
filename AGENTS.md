@@ -218,6 +218,12 @@ Confermato su un Kindle 4 (`Linux kindle 2.6.31-rt11-lab126`, FBInk lo identific
   `<menus><menu type="json" dynamic="true">menu.json</menu></menus>`.
 - il mount USB basta per leggere `/mnt/us` **e** `dashboard.log` anche con il framework avviato:
   prima di aggiungere un esperimento si legge il log, non si ricomincia da capo.
+- **risveglio RTC**: `powerd` non ha proprietà RTC (nove nomi rifiutati), `rtc0` (`mxc_rtc`) non ha
+  `wakealarm`, `rtc1` (`pmic_rtc`) sì ma conta dall'accensione: si scrive `since_epoch + N` e si
+  sospende con `echo mem > /sys/power/state`. La rilettura di `wakealarm` è vuota (driver) ma
+  l'allarme è armato: verificato **61 s con uptime continuo** (ripresa, non riavvio).
+- `powerd_test`: lo stato si legge con **`-s`**; **`-h` non è help** ma «power button held» e spegne
+  lo schermo. `powerd` entra da solo in standby dopo ~600 s di inattività.
 
 Conseguenza di progetto: **il browser resta la visualizzazione predefinita** (`/panel.html` con meta
 refresh) finché non esiste un ciclo nativo collaudato; l'estensione KUAL ha voci diagnostiche
