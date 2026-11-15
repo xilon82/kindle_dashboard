@@ -105,7 +105,14 @@ Fatti verificati:
 
 Resta da misurare l'autonomia reale (20 cicli) e da decidere se avviare il ciclo all'accensione.
 
-#### E8.2 — Tentativo da 20 giri interrotto da un riavvio (2026-11-15)
+#### E8.2 — Vent'anni giri: un run completo e uno interrotto (2026-11-15)
+
+Run completo (21:34:44–22:12:24):
+
+- 20 giri, un risveglio ogni ~91 s (90 s di sospensione + aggiornamento), uptime 30995 → 31430
+  continuo, nessun `download fallito`, `raggiunto il limite di 20 giri` e `cycle: terminato`.
+
+Tentativo interrotto (22:21:28–22:46, giro 14):
 
 ```
 22:21:28 cycle: avvio (giri=20, 0=infinito)
@@ -126,9 +133,19 @@ Fatti:
 - la sospensione da **30 s** era il fallback usato perché `/next` non rispondeva; il Kindle era
   attaccato alla **USB del PC** (è così che il log veniva letto).
 - ipotesi da verificare: sospendere con la USB del PC collegata (gadget `arcotg_udc` + PMIC, nel
-  `dmesg` compaiono `chargerUsbHigh` e `charger times out`) può finire in reset. Prossimo test
-  controllato: `cycle 3` e poi `cycle 20` con **solo caricatore, USB staccata**, leggendo il log solo
-  alla fine.
+  `dmesg` compaiono `chargerUsbHigh` e `charger times out`) può finire in reset.
+
+Prove brevi (23:46 e 23:50), con il Kindle staccato dalla USB:
+
+- una sospensione da 90 s ciascuna, ripresa corretta: `dmesg` con
+  `PM: resume of devices complete after 1248 msecs` e
+  `Battery: Resume - TimeSuspended(secs)=89, RSOC=97, capacity=97%`; uptime 3625/3728 continuo;
+- fermate a mano dopo un giro, con `loop: fermato (pid …)`: lo stop uccide il processo prima della
+  sospensione successiva.
+
+Conclusione: il ciclo da 20 giri **ha già funzionato per intero** una volta; il fallimento è isolato
+al tentativo con la USB del PC collegata. Manca la batteria prima/dopo di un run completo: va rifatto
+con caricatore e USB staccata, leggendo il log solo alla fine.
 
 ## Vincoli di sicurezza
 

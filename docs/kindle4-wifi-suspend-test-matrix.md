@@ -5,9 +5,9 @@ contagia le altre, e «non testato» non significa «fallito».
 
 Legenda: **Verificato** = c'è una prova ripetibile; **Fallito** = c'è una prova di errore; **Non testato** = nessuno l'ha ancora eseguito.
 
-Ultimo aggiornamento: **2026-11-15**, dopo il primo `cycle 20`: si è interrotto al giro 14 per un
-**riavvio del device** durante la sospensione, con il Kindle attaccato alla USB del PC. Il ripiego
-batteria è implementato e il valore letto è corretto, ma non è stato forzato: righe C2, C4 e C9.
+Ultimo aggiornamento: **2026-11-15**, dopo tre prove da 20 giri: una **completata** (21:34–22:12, 20
+giri, uptime continuo), una interrotta al giro 14 da un **riavvio** con il Kindle sulla USB del PC, e
+una avviata e fermata dopo un giro. Batteria letta: **97%**. Righe C2, C4 e C9.
 
 ## Wi-Fi
 
@@ -24,7 +24,7 @@ batteria è implementato e il valore letto è corretto, ma non è stato forzato:
 |---|---|---|---|---|
 | S1 | Wake RTC programmato sul device | **Verificato** | `powerd` **non** ha proprietà RTC (9 nomi rifiutati); si usa `rtc1/wakealarm` con `since_epoch + N` | la rilettura è vuota (driver non supporta `cat`) |
 | S2 | Ingresso in sospensione vera | **Verificato** | `echo mem > /sys/power/state`, standby confermato | — |
-| S3 | Risveglio all'orario programmato | **Verificato** | sospeso 13:55:25, risvegliato 13:56:26 (**61 s**) | — |
+| S3 | Risveglio all'orario programmato | **Verificato** | sospeso 13:55:25, risvegliato 13:56:26 (**61 s**); in un ciclo reale `dmesg`: `Battery: Resume - TimeSuspended(secs)=89` | — |
 | S4 | Il processo riprende dopo il wake | **Verificato** | `suspend_rtc: risvegliato, uptime=7854.21` (uptime continuo, non reboot) | — |
 | S5 | Wi-Fi dopo il wake | **Verificato** | il download riesce 5 s dopo il risveglio, senza riaccendere la radio | — |
 
@@ -34,10 +34,10 @@ batteria è implementato e il valore letto è corretto, ma non è stato forzato:
 |---|---|---|---|---|
 | C1 | Ciclo completo (wake → PNG → display → sleep) | **Verificato** | 3 giri: sospensione 90 s, risveglio 92/91/91 s, uptime continuo, download riuscito | manca la misura batteria |
 | C8 | Ciclo autonomo con sospensione RTC | **Verificato (3 giri)** | `cycle 3`: `/next` → sospensione → aggiornamento, stop automatico al limite | i 20 cicli e l'autonomia restano da misurare |
-| C2 | 20 cicli senza interventi | **Fallito (1 tentativo)** | `cycle 20` interrotto al **giro 14**: il device si è riavviato ~30 s dopo una sospensione da 30 s (fallback perché `/next` falliva). Dopo il boot `rtc1 since_epoch=3057`, `dmesg` con `wdog: Abnormal reset detected but saved buffer invalid`; **Ferma ciclo** ha poi trovato `loop: non in esecuzione` (pid orfano rimosso) | il Kindle era attaccato alla **USB del PC**: ripetere con caricatore e USB staccata |
-| C9 | Lettura batteria per la misura di autonomia | **Parziale** | `inventory`: `batteria exit=0: 95`, coerente con `powerd_status ... Battery Level: 95%`; `comandi: … sed=/bin/sed` | non si sa se il 95 viene da `capacity` o dal ripiego (`powerd_test -s`): il ripiego è provato solo in container |
-| C3 | Server offline / IP cambiato nel ciclo | **Parziale** | nel `cycle 20` due `download fallito` (22:44 e 22:46 del device): il ciclo ha tenuto l'ultimo PNG e ha continuato (`cycle: aggiornato`), poi `/next` è caduto sul fallback da 30 s | non è stato forzato fermando il server; è capitato per una caduta reale |
-| C4 | Errori gestiti senza lasciare il device in stato strano | **Fallito in un caso reale** | la sospensione si è chiusa con un **riavvio** (`wdog: Abnormal reset detected`), non con una ripresa; `rtc1 since_epoch` è ripartito da zero | causa da isolare: sospensione con USB del PC collegata (gadget/charger, `arcotg_udc`/`pmic` nel `dmesg`)? sleep da 30 s? Il recupero resta USB + log |
+| C2 | 20 cicli senza interventi | **Verificato (1 run completo)** | `cycle 20` 21:34:44–22:12:24: 20 giri, risvegli ogni ~91 s, uptime 30995 → 31430 continuo, nessun `download fallito`, `raggiunto il limite di 20 giri`. Un secondo tentativo (22:21–22:46) si è interrotto al giro 14 con un riavvio (`wdog`), con il Kindle sulla USB del PC | manca la batteria prima/dopo: rifare con caricatore e USB staccata |
+| C9 | Lettura batteria per la misura di autonomia | **Parziale** | `inventory`: `batteria exit=0: 97`; `dmesg` riporta `Battery: Resume - TimeSuspended(secs)=89 … capacity=97%`; `comandi: … sed=/bin/sed` | il valore sembra venire da `capacity` (PMIC); il ripiego `powerd_test -s` non è stato forzato |
+| C3 | Server offline / IP cambiato nel ciclo | **Parziale** | nel secondo `cycle 20` due `download fallito` (22:44 e 22:46 del device): il ciclo ha tenuto l'ultimo PNG e ha continuato (`cycle: aggiornato`), poi `/next` è caduto sul fallback da 30 s | non è stato forzato fermando il server; è capitato per una caduta reale |
+| C4 | Errori gestiti senza lasciare il device in stato strano | **Parziale** | le prove con caricatore riprendono correttamente (`dmesg`: `PM: resume of devices complete after 1248 msecs`, `Battery: Resume - TimeSuspended(secs)=89`, uptime 3625/3728 continuo); una sospensione con la USB del PC collegata si è chiusa con un riavvio (`wdog: Abnormal reset detected`) | causa del riavvio da isolare (USB/gadget/charger); il recupero resta USB + log |
 | C5 | Rollback | **Verificato per costruzione** | basta non avere una voce di avvio automatico; il ciclo si ferma con **Ferma ciclo** | il file `STOP` resta finché non si riavvia il ciclo |
 
 ## Come aggiornare questa matrice

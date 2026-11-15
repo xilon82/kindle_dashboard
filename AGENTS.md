@@ -237,9 +237,10 @@ Confermato su un Kindle 4 (`Linux kindle 2.6.31-rt11-lab126`, FBInk lo identific
 - **ciclo autonomo**: `cycle` disegna, chiede `/next` al server (cadenza giorno/notte), sospende con
   l'RTC e al risveglio riscarica. Lo stop è lo stesso di `loop` (file STOP + `kill`), quindi uccide
   il processo prima che si addormenti e non lascia il device sospeso. Verificato su 3 giri: risvegli
-  a 92/91/91 s, uptime continuo e **Wi-Fi ancora associato** (nessun `wifi_off` necessario). Il primo
-  `cycle 20` invece si è **interrotto al giro 14 con un riavvio** (`dmesg`: `wdog: Abnormal reset
-  detected`, `rtc1 since_epoch` ripartito), con il Kindle attaccato alla USB del PC: i test dei cicli
+  a 92/91/91 s, uptime continuo e **Wi-Fi ancora associato** (nessun `wifi_off` necessario). Un
+  `cycle 20` completo ha tenuto 20 giri (21:34–22:12, risvegli ~91 s, uptime continuo); un secondo
+  tentativo si è invece **interrotto al giro 14 con un riavvio** (`dmesg`: `wdog: Abnormal reset
+  detected`, `rtc1 since_epoch` ripartito) con il Kindle attaccato alla USB del PC. I test dei cicli
   vanno fatti con il caricatore e la USB staccata, leggendo il log solo alla fine.
 
 Conseguenza di progetto: **il browser resta la visualizzazione predefinita** (`/panel.html` con meta
