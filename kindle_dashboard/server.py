@@ -161,6 +161,10 @@ def _handler(service: PanelService) -> type[BaseHTTPRequestHandler]:
                 self._send(HTTPStatus.OK, "image/png", payload)
             elif path == "/health":
                 self._send_text(HTTPStatus.OK, "ok\n")
+            elif path == "/next":
+                # Secondi al prossimo aggiornamento: il client nativo li usa come durata della
+                # sospensione, cosi' la cadenza (giorno/notte) resta decisa solo da `schedule.py`.
+                self._send_text(HTTPStatus.OK, f"{service.refresh_seconds}\n")
             elif path in {"/panel.html", "/"}:
                 self._send(
                     HTTPStatus.OK,

@@ -59,6 +59,21 @@ def test_health_and_panel_endpoints(tmp_path, monkeypatch):
         thread.join(timeout=5)
 
 
+def test_next_endpoint_returns_the_refresh_seconds(tmp_path, monkeypatch):
+    """Il client nativo usa `/next` come durata della sospensione tra due disegni."""
+    httpd, thread = start(tmp_path, monkeypatch)
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        with urllib.request.urlopen(f"{base}/next", timeout=5) as response:
+            assert response.status == 200
+            assert response.headers["Content-Type"] == "text/plain; charset=utf-8"
+            assert response.read() == b"300\n"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
+
+
 def test_panel_html_points_at_png_and_autorefreshes(tmp_path, monkeypatch):
     httpd, thread = start(tmp_path, monkeypatch)
     base = f"http://127.0.0.1:{httpd.server_address[1]}"

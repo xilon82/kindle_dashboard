@@ -66,9 +66,43 @@ sono `enabled` per il wake a livello di device (`rtc_wakeup`). `powerd` entra da
 ~600 s di inattività (`Remaining time in this state`), quindi un ciclo reale deve usare questo
 meccanismo, non un timeout proprio.
 
-### E8 — 20 cicli completi + batteria
+### E8 — Ciclo autonomo (in corso)
 
-Criterio di completamento: 20 cicli consecutivi con cadenza reale (`refresh_seconds`: 90 s giorno, 3600 s notte), server offline gestito, stop manuale, rollback banale, misura di autonomia su periodo significativo.
+Il ciclo completo non usa una cadenza fissa: chiede al server `/next` (secondi al prossimo
+aggiornamento, calcolati da `schedule.py`) e usa quel valore come durata della sospensione RTC.
+Sequenza a ogni giro: `update_panel` → `draw_panel` → `/next` → `suspend_rtc` → risveglio.
+
+Lo stop è quello di `loop` (`STOP` + `kill`): il processo muore prima di sospendersi, quindi non
+resta un device addormentato con un aggiornamento in coda. Se `suspend_rtc` fallisce, il ciclo
+attende con `sleep` invece di girare a vuoto.
+
+Criterio di completamento: **20 cicli** con cadenza reale (90 s giorno, 3600 s notte), server
+offline gestito (l'ultimo PNG resta), stop manuale, misura di autonomia su un periodo significativo.
+
+#### E8.1 — Tre giri reali (2026-11-15)
+
+```
+14:17:32 cycle: avvio (giri=3, 0=infinito)
+14:17:36 loop: scaricato panel.png (33185 byte)
+14:17:36/41/46 cycle: disegnato (warm-up)
+14:18:06 cycle: sospensione 90 s
+14:19:38 suspend_rtc: risvegliato, uptime=9157.24
+14:19:43 loop: scaricato panel.png (33630 byte)
+14:19:44 cycle: aggiornato (giro 1)
+14:21:30 suspend_rtc: risvegliato, uptime=9180.51   (giro 2)
+14:23:22 suspend_rtc: risvegliato, uptime=9204.13   (giro 3)
+14:23:28 cycle: raggiunto il limite di 3 giri
+```
+
+Fatti verificati:
+
+- tre sospensioni da 90 s e tre risvegli dopo **92/91/91 s**;
+- **uptime continuo** (9157 → 9180 → 9204): sono riprese, non riavvii;
+- **il Wi-Fi resta associato dopo il risveglio**: il download riesce 5 s dopo, senza
+  riconnessione. Non serve `wifi_off` a ogni giro: il standby spegne già la radio;
+- il ciclo si ferma da solo al limite di giri, senza corsa contro la sospensione.
+
+Resta da misurare l'autonomia reale (20 cicli) e da decidere se avviare il ciclo all'accensione.
 
 ## Vincoli di sicurezza
 

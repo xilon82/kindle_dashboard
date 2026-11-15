@@ -93,9 +93,9 @@ battery_capacity() {
     return 1
 }
 
-# BusyBox 1.7.2 non ha `wget -T`: il timeout si ottiene con un watchdog in background, altrimenti un
-# server che non risponde lascia la voce di menu appesa per sempre.
-fetch_png() {
+# Scarica un URL in un file. BusyBox 1.7.2 non ha `wget -T`: il timeout si ottiene con un watchdog
+# in background, altrimenti un server che non risponde lascia la voce di menu appesa per sempre.
+fetch_url() {
     "$WGET" -q -O "$2" "$1" &
     fetch_pid=$!
     ( sleep 15; kill -9 "$fetch_pid" 2>/dev/null ) &
@@ -125,7 +125,7 @@ is_png() {
 # un errore HTML o un file troncato non devono cancellare l'ultima immagine valida.
 update_panel() {
     tmp="$WORK_DIR/panel.new"
-    if ! fetch_png "$(panel_url)" "$tmp"; then
+    if ! fetch_url "$(panel_url)" "$tmp"; then
         rm -f "$tmp"
         log "loop: download fallito (tengo l'ultimo panel.png)"
         return 1
@@ -141,6 +141,24 @@ update_panel() {
     return 0
 }
 
+# Secondi al prossimo aggiornamento, decisi dal server (`/next`): la cadenza giorno/notte resta in
+# `schedule.py`. Se il server non risponde si usa il default del ciclo, senza perdere la sospensione.
+next_seconds() {
+    tmp="$WORK_DIR/next.txt"
+    if ! fetch_url "http://$HOST:$PORT/next" "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    value="$(cat "$tmp" 2>/dev/null)"
+    rm -f "$tmp"
+    case "$value" in
+        '' | *[!0-9]*)
+            return 1
+            ;;
+    esac
+    printf '%s' "$value"
+}
+
 check() {
     if [ -z "$WGET" ]; then
         log "check: wget non trovato"
@@ -148,7 +166,7 @@ check() {
     fi
     tmp="$WORK_DIR/check.png"
     url="$(panel_url)"
-    if ! fetch_png "$url" "$tmp"; then
+    if ! fetch_url "$url" "$tmp"; then
         rm -f "$tmp"
         log "check: FALLITO $url (PC spento, IP cambiato o firewall)"
         return 1
@@ -357,6 +375,60 @@ stop_loop() {
     fi
 }
 
+# Ciclo autonomo: disegna, chiede al server la cadenza (`/next`), sospende il device con l'RTC e al
+# risveglio aggiorna. Lo stop e' lo stesso di `stop` (file STOP + kill): il kill arriva prima che il
+# device si addormenti, quindi non resta sospeso con l'aggiornamento gia' programmato.
+start_cycle() {
+    # Primo argomento: numero massimo di giri (0 o assente = infinito). Con un limite il test si ferma
+    # da solo: fra due sospensioni la finestra per premere "Ferma ciclo" e' di pochi secondi.
+    max_rounds="${1:-0}"
+    case "$max_rounds" in
+        '' | *[!0-9]*)
+            max_rounds=0
+            ;;
+    esac
+    if [ -z "$EIPS" ]; then
+        log "cycle: eips ASSENTE"
+        return 1
+    fi
+    if loop_running; then
+        log "cycle: gia' in esecuzione (pid $(cat "$PID_FILE"))"
+        return 0
+    fi
+    rm -f "$STOP_FILE"
+    log "cycle: avvio (giri=$max_rounds, 0=infinito)"
+    (
+        trap 'rm -f "$PID_FILE"' 0
+        update_panel
+        for _ in 1 2 3; do
+            draw_panel
+            log "cycle: disegnato (warm-up)"
+            sleep 5
+        done
+        rounds=0
+        while [ ! -f "$STOP_FILE" ]; do
+            wait_s="$(next_seconds)" || wait_s="$LOOP_SECONDS"
+            [ "$wait_s" -ge 5 ] 2>/dev/null || wait_s="$LOOP_SECONDS"
+            log "cycle: sospensione $wait_s s"
+            if ! suspend_rtc "$wait_s"; then
+                log "cycle: sospensione non riuscita, attendo con sleep"
+                sleep "$wait_s"
+            fi
+            [ -f "$STOP_FILE" ] && break
+            update_panel
+            draw_panel
+            rounds=$((rounds + 1))
+            log "cycle: aggiornato (giro $rounds)"
+            if [ "$max_rounds" -gt 0 ] && [ "$rounds" -ge "$max_rounds" ]; then
+                log "cycle: raggiunto il limite di $max_rounds giri"
+                break
+            fi
+        done
+        log "cycle: terminato"
+    ) &
+    echo $! >"$PID_FILE"
+}
+
 # Legge lo stato del Wi-Fi (CONNECTED, DISCONNECTED, etc.).
 wifi_state() {
     lipc-get-prop com.lab126.wifid cmState 2>/dev/null | tr -d '\r\n'
@@ -533,6 +605,9 @@ case "$1" in
     stop)
         stop_loop
         ;;
+    cycle)
+        start_cycle "$2"
+        ;;
     wifi_off)
         wifi_off
         ;;
@@ -564,7 +639,7 @@ case "$1" in
         allow_sleep
         ;;
     *)
-        echo "uso: $0 {check|diag|inventory|images|show [file]|loop|stop|wifi_off|wifi_on|wifi_cycle|rtc_info|rtc_arm|suspend_rtc|resume_check|rtc_cycle|awake|sleep}"
+        echo "uso: $0 {check|diag|inventory|images|show [file]|loop|stop|cycle|wifi_off|wifi_on|wifi_cycle|rtc_info|rtc_arm|suspend_rtc|resume_check|rtc_cycle|awake|sleep}"
         exit 2
         ;;
 esac

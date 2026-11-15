@@ -118,6 +118,20 @@
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
 			"params": "rtc_arm 120",
 			"internal": "status Arma l'allarme a 120s e rilegge, senza sospendere"
+		},
+		{
+			"name": "Avvia ciclo RTC",
+			"priority": 18,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "cycle",
+			"internal": "status Disegna, sospende con l'RTC per /next secondi, aggiorna al risveglio"
+		},
+		{
+			"name": "Test ciclo RTC (3 giri)",
+			"priority": 19,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "cycle 3",
+			"internal": "status Come Avvia ciclo RTC, ma si ferma da solo dopo 3 giri"
 		}
 	]
 }

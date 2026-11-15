@@ -196,6 +196,12 @@ nativo** (`eips`) deve invece coprire tutto il framebuffer: chiede `/panel.png?h
 PNG **600x800**. Con 720 gli ultimi 80 px restano quelli di KUAL (provato sul device: si vedeva
 ancora «pagina 1 di 2»). `h` è validato (200-1600) e senza parametro vale la configurazione.
 
+Per il **ciclo autonomo** il device chiede anche `/next`, che risponde con i secondi al prossimo
+aggiornamento (90 di giorno, `night_refresh_seconds` di notte): la cadenza resta decisa da
+`schedule.py` e il device la usa come durata della sospensione RTC. Il Wi-Fi **resta associato**
+durante lo standby (provato: download riuscito 5 s dopo il risveglio), quindi il ciclo non spegne la
+radio a ogni giro.
+
 Di notte (finestra `[schedule]`, default **23:00–06:30**) la pagina si ricarica ogni
 `night_refresh_seconds` e al posto dell'ora compare **`NOTTE`**: l'ora sarebbe vecchia fino a un'ora,
 mentre il footer `dati HH:MM` continua a dire quando i dati sono stati raccolti. L'intervallo non
@@ -320,6 +326,8 @@ raggiunge il PC. Voci:
 | Test RTC cycle (60s) | come sopra, in un comando solo |
 | RTC info (sola lettura) | `name`, `since_epoch` e `wakealarm` di `rtc0` e `rtc1` |
 | RTC test arm (120s) | arma l'allarme a 120 s e lo rilegge, **senza** sospendere: prova che il driver accetta il valore |
+| Avvia ciclo RTC | ciclo autonomo: disegna, chiede `/next`, sospende il device con l'RTC e aggiorna al risveglio; si ferma con **Ferma ciclo** |
+| Test ciclo RTC (3 giri) | come sopra ma si ferma da solo dopo 3 giri: fra due sospensioni la finestra per fermarlo è di pochi secondi |
 
 Nessuna di queste voci ferma il framework, spegne il Wi-Fi o sospende il device: al massimo disegnano
 sullo schermo. Mentre il ciclo gira il pannello copre l'interfaccia a ogni giro, quindi KUAL si

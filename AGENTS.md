@@ -23,7 +23,7 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
 | `cache.py` | persistere l'ultimo payload buono | contenere modelli |
 | `model.py` | dataclass immutabili | importare Pillow |
 | `render/*` | disegnare `PanelData` | fare I/O di rete |
-| `server.py` | HTTP + cache del PNG in memoria | contenere layout |
+| `server.py` | HTTP: `/panel.png` (con `?h=`), `/health`, `/next` (secondi al prossimo giro) + cache del PNG in memoria | contenere layout |
 | `__main__.py` | CLI sottile | logica di dominio |
 
 ### Invarianti
@@ -224,6 +224,10 @@ Confermato su un Kindle 4 (`Linux kindle 2.6.31-rt11-lab126`, FBInk lo identific
   l'allarme è armato: verificato **61 s con uptime continuo** (ripresa, non riavvio).
 - `powerd_test`: lo stato si legge con **`-s`**; **`-h` non è help** ma «power button held» e spegne
   lo schermo. `powerd` entra da solo in standby dopo ~600 s di inattività.
+- **ciclo autonomo**: `cycle` disegna, chiede `/next` al server (cadenza giorno/notte), sospende con
+  l'RTC e al risveglio riscarica. Lo stop è lo stesso di `loop` (file STOP + `kill`), quindi uccide
+  il processo prima che si addormenti e non lascia il device sospeso. Verificato su 3 giri: risvegli
+  a 92/91/91 s, uptime continuo e **Wi-Fi ancora associato** (nessun `wifi_off` necessario).
 
 Conseguenza di progetto: **il browser resta la visualizzazione predefinita** (`/panel.html` con meta
 refresh) finché non esiste un ciclo nativo collaudato; l'estensione KUAL ha voci diagnostiche
