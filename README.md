@@ -328,6 +328,7 @@ raggiunge il PC. Voci:
 | RTC test arm (120s) | arma l'allarme a 120 s e lo rilegge, **senza** sospendere: prova che il driver accetta il valore |
 | Avvia ciclo RTC | ciclo autonomo: disegna, chiede `/next`, sospende il device con l'RTC e aggiorna al risveglio; si ferma con **Ferma ciclo** |
 | Test ciclo RTC (3 giri) | come sopra ma si ferma da solo dopo 3 giri: fra due sospensioni la finestra per fermarlo è di pochi secondi |
+| Test ciclo RTC (20 giri) | misura di autonomia: 20 giri da 90 s (~30 min); l'inventario riporta la batteria prima e dopo |
 
 Nessuna di queste voci ferma il framework, spegne il Wi-Fi o sospende il device: al massimo disegnano
 sullo schermo. Mentre il ciclo gira il pannello copre l'interfaccia a ogni giro, quindi KUAL si

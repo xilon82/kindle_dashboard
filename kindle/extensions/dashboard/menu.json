@@ -132,6 +132,13 @@
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
 			"params": "cycle 3",
 			"internal": "status Come Avvia ciclo RTC, ma si ferma da solo dopo 3 giri"
+		},
+		{
+			"name": "Test ciclo RTC (20 giri)",
+			"priority": 20,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "cycle 20",
+			"internal": "status Misura di autonomia: 20 giri da 90 s, circa 30 minuti"
 		}
 	]
 }

@@ -231,6 +231,8 @@ inventory() {
     report cpu head -n 5 /proc/cpuinfo
     report memoria head -n 3 /proc/meminfo
     report disco sh -c "df -h | head -n 5"
+    # Batteria prima/dopo un ciclo lungo: e' l'unico modo per stimare l'autonomia.
+    report batteria sh -c "cat /sys/class/power_supply/*/capacity 2>/dev/null | head -n 1"
     which_list
     report openssl openssl version
     report wget_help sh -c "wget --help 2>&1 | head -n 5"
