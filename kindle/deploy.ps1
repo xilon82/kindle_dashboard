@@ -108,6 +108,22 @@ Write-Host "Kindle:  $KindleDrive"
 Write-Host "PC:      http://${HostAddress}:$port/panel.png"
 Write-Host "Destinazione: $scriptPath"
 
+# Windows classifica molte reti domestiche come Public: una regola limitata ai profili Private non
+# verrebbe applicata. Se però esiste già una regola per questa porta su tutti i profili (quella di
+# allow-lan.ps1), l'avviso sarebbe falso: si controlla prima di allarmare. Anche il DryRun lo stampa,
+# perché è esattamente la domanda "il Kindle raggiungerà il PC?".
+$networkProfile = Get-NetConnectionProfile -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($networkProfile -and $networkProfile.NetworkCategory.ToString() -eq "Public") {
+    $existingRule = Get-NetFirewallRule -DisplayName "kindle-dashboard $port" -ErrorAction SilentlyContinue
+    if ($existingRule -and ("$($existingRule.Profile)" -match "Any")) {
+        Write-Host "rete Public: la regola firewall per la porta $port copre tutti i profili, nessuna azione richiesta."
+    } else {
+        Write-Warning "la rete '$($networkProfile.Name)' e' classificata Public: la regola Private non verra' applicata."
+        Write-Warning "consigliato (PowerShell admin): powershell -ExecutionPolicy Bypass -File .\kindle\allow-lan.ps1"
+        Write-Warning "in alternativa: .\kindle\deploy.ps1 -OpenFirewall -AnyProfile"
+    }
+}
+
 if ($DryRun) {
     Write-Host "`n--- DryRun: nessuna scrittura. Prime righe di dashboard.sh ---"
     Write-Host (($rendered -split "`n")[0..7] -join "`n")
@@ -149,14 +165,6 @@ if ($OpenFirewall) {
             Write-Warning "firewall non modificato (serve PowerShell come amministratore): $($_.Exception.Message)"
         }
     }
-}
-
-# Windows classifica molte reti domestiche come Public: in quel caso una regola Private non basta.
-$networkProfile = Get-NetConnectionProfile -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($networkProfile -and $networkProfile.NetworkCategory.ToString() -eq "Public") {
-    Write-Warning "la rete '$($networkProfile.Name)' e' classificata Public: la regola Private non verra' applicata."
-    Write-Warning "consigliato (PowerShell admin): powershell -ExecutionPolicy Bypass -File .\kindle\allow-lan.ps1"
-    Write-Warning "in alternativa: .\kindle\deploy.ps1 -OpenFirewall -AnyProfile"
 }
 
 Write-Host ""
