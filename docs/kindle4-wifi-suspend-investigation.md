@@ -105,6 +105,31 @@ Fatti verificati:
 
 Resta da misurare l'autonomia reale (20 cicli) e da decidere se avviare il ciclo all'accensione.
 
+#### E8.2 — Tentativo da 20 giri interrotto da un riavvio (2026-11-15)
+
+```
+22:21:28 cycle: avvio (giri=20, 0=infinito)
+22:46:08 cycle: aggiornato (giro 14)
+22:46:23 cycle: sospensione 30 s   (fallback: /next falliva)
+22:46:23 suspend_rtc: sospensione...
+23:37:04 loop: non in esecuzione   (dopo il riavvio: pid orfano)
+```
+
+Fatti:
+
+- il ciclo si è fermato al **giro 14 di 20**, e non per lo stop: il device si è **riavviato** ~30 s
+  dopo la sospensione. Prova: `rtc1 since_epoch=3057` all'inventario (boot ~51 min prima),
+  `dmesg` con `wdog: Abnormal reset detected but saved buffer invalid`, `powerd_status` con
+  `Battery Level: 95%` / `Charging: No`.
+- due `download fallito` (22:44 e 22:46 del device) durante i giri 12-14: il ciclo ha tenuto l'ultimo
+  PNG e ha continuato, come previsto (C3).
+- la sospensione da **30 s** era il fallback usato perché `/next` non rispondeva; il Kindle era
+  attaccato alla **USB del PC** (è così che il log veniva letto).
+- ipotesi da verificare: sospendere con la USB del PC collegata (gadget `arcotg_udc` + PMIC, nel
+  `dmesg` compaiono `chargerUsbHigh` e `charger times out`) può finire in reset. Prossimo test
+  controllato: `cycle 3` e poi `cycle 20` con **solo caricatore, USB staccata**, leggendo il log solo
+  alla fine.
+
 ## Vincoli di sicurezza
 
 - **Nessun comando** che spegne Wi-Fi, sospende o riavvia senza tua approvazione esplicita.

@@ -343,7 +343,7 @@ raggiunge il PC. Voci:
 | RTC test arm (120s) | arma l'allarme a 120 s e lo rilegge, **senza** sospendere: prova che il driver accetta il valore |
 | Avvia ciclo RTC | ciclo autonomo: disegna, chiede `/next`, sospende il device con l'RTC e aggiorna al risveglio; si ferma con **Ferma ciclo** |
 | Test ciclo RTC (3 giri) | come sopra ma si ferma da solo dopo 3 giri: fra due sospensioni la finestra per fermarlo è di pochi secondi |
-| Test ciclo RTC (20 giri) | misura di autonomia: 20 giri da 90 s (~30 min); l'inventario riporta la batteria prima e dopo |
+| Test ciclo RTC (20 giri) | misura di autonomia: 20 giri da 90 s (~30 min) **con caricatore e USB staccata** (una prova con la USB del PC collegata si è chiusa con un riavvio del device); l'inventario riporta la batteria prima e dopo |
 
 Nessuna di queste voci ferma il framework. Le voci Wi-Fi e RTC cambiano lo stato del device, e solo
 quando le scegli: la sospensione arma prima l'allarme RTC e, se la scrittura fallisce, non addormenta
