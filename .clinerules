@@ -10,6 +10,10 @@ Genera un PNG 600x800 (meteo, mare, Google Calendar, partenze treni) servito via
 jailbroken che lo disegna con FBInk. Nessuna API key: Open-Meteo (meteo e mare) + Transitous;
 Pillow disegna.
 
+Il **runtime principale è il container** (`docker compose up -d`). Il venv **non** è il percorso di
+esecuzione: resta per sviluppo, per il gate (`ruff` + `pytest`, che l'immagine di produzione non
+contiene) e come percorso didattico (`docs/venv.md`).
+
 ```
 kindle_dashboard/
   __main__.py        CLI: render | serve | resolve-station
@@ -29,11 +33,12 @@ tests/               pytest con fixture registrate, zero rete
 
 | Scopo | Comando esatto |
 |---|---|
-| install | `python -m pip install -e .` |
+| run (server, percorso principale) | `docker compose up -d` (`docker compose build` dopo modifiche a `Dockerfile`/`pyproject.toml`) |
+| run (server, senza Docker) | `python -m kindle_dashboard serve` |
+| install (venv: sviluppo, gate, didattica) | `python -m pip install -e ".[dev]"` (l'extra `dev` porta `pytest` e `ruff`) |
 | lint | `python -m ruff check .` |
 | test | `python -m pytest -q` |
 | run (anteprima) | `python -m kindle_dashboard render -o preview.png` |
-| run (server) | `python -m kindle_dashboard serve` |
 | deploy device | `.\kindle\deploy.ps1` (`-DryRun` per provare) |
 
 ## §Stile

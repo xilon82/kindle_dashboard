@@ -3,6 +3,15 @@
 > I vincoli operativi **non** sono qui: stanno in `.clinerules`.
 > Questo file descrive architettura, invarianti e come intervenire senza romperli.
 
+## Ambienti
+
+- **Container = percorso principale**: `docker compose up -d` è come il pannello gira. L'immagine è
+  il runtime di produzione: non contiene `tests/` e non installa `pytest`/`ruff`.
+- **Venv = sviluppo, gate e didattica**: `python -m pip install -e ".[dev]"`, poi
+  `python -m ruff check .` e `python -m pytest -q`; serve anche per anteprime e CLI senza Docker.
+- Il gate resta nel venv (`.clinerules` §Workflow): non piegare l'immagine di produzione a fare da
+  ambiente di test. Dettagli: `docs/docker.md` e `docs/venv.md`.
+
 ## Architettura
 
 Flusso unidirezionale, nessun ciclo:
@@ -223,19 +232,22 @@ Confermato su un Kindle 4 (`Linux kindle 2.6.31-rt11-lab126`, FBInk lo identific
   sospende con `echo mem > /sys/power/state`. La rilettura di `wakealarm` è vuota (driver) ma
   l'allarme è armato: verificato **61 s con uptime continuo** (ripresa, non riavvio).
 - `powerd_test`: lo stato si legge con **`-s`**; **`-h` non è help** ma «power button held» e spegne
-  lo schermo. `powerd` entra da solo in standby dopo ~600 s di inattività.
+  lo schermo. `powerd` entra da solo in standby dopo ~600 s di inattività. `-s` stampa anche la
+  batteria: è il ripiego di `battery_percent` quando `/sys/class/power_supply/*/capacity` non c'è.
 - **ciclo autonomo**: `cycle` disegna, chiede `/next` al server (cadenza giorno/notte), sospende con
   l'RTC e al risveglio riscarica. Lo stop è lo stesso di `loop` (file STOP + `kill`), quindi uccide
   il processo prima che si addormenti e non lascia il device sospeso. Verificato su 3 giri: risvegli
   a 92/91/91 s, uptime continuo e **Wi-Fi ancora associato** (nessun `wifi_off` necessario).
 
 Conseguenza di progetto: **il browser resta la visualizzazione predefinita** (`/panel.html` con meta
-refresh) finché non esiste un ciclo nativo collaudato; l'estensione KUAL ha voci diagnostiche
+refresh) finché il ciclo nativo non ha una misura di autonomia; l'estensione KUAL ha voci diagnostiche
 (`Verifica server`, `Diagnostica`, `Inventario`, `Test immagini (eips)`, `Mostra panel.png`) e quelle
-di disegno usano `eips` con immagini **8 bit**, senza fermare il framework. Nessuna voce spegne il
-Wi-Fi o sospende il device. Il disegno nativo **non è più «impossibile»**: le prove sono `images`
-(formati) e `loop` (persistenza); per promuoverlo a default serve un ciclo con download, verifica del
-PNG, disegno e ripresa dalla sospensione.
+di disegno usano `eips` con immagini **8 bit**, senza fermare il framework. Le voci Wi-Fi e RTC
+cambiano lo stato del device, e solo su scelta esplicita dal menu; anche `cycle` sospende a ogni giro,
+con lo stesso allarme armato prima di addormentare, quindi una scrittura fallita non lascia il device
+in standby. Il recupero è USB + `dashboard.log`. Il disegno nativo **non è più «impossibile»**: le
+prove sono `images` (formati), `loop` (persistenza) e `cycle` (download + disegno + ripresa RTC, 3
+giri verificati); per promuoverlo a default servono i 20 giri con la misura di batteria.
 
 Rapporto con le prove, fase per fase: `docs/kindle4-investigation.md` e `docs/kindle4-test-matrix.md`.
 Strumenti: `kindle/inspect_png.py` (formato/depth/interlace), `kindle/make_test_images.py` (scheda
@@ -251,8 +263,8 @@ Ancora da confermare: comportamento della batteria con la pagina aperta per ore.
 | `.clinerules` | chi scrive codice: vincoli e gate di commit |
 | `AGENTS.md` | agenti/sviluppatori: architettura, estensioni, mappa dei test |
 | `docs/technical-walkthrough.md` | chi studia il progetto: percorso tecnico narrato, con i bug reali |
-| `docs/venv.md` | chi sviluppa: cosa isola un venv, come crearlo, vantaggi e limiti |
-| `docs/docker.md` | chi fa deploy: scelte dell'immagine, volumi, comandi, rollback, trappole |
+| `docs/venv.md` | chi sviluppa e chi studia: cosa isola un venv, come crearlo, vantaggi e limiti (percorso didattico; il runtime principale è il container) |
+| `docs/docker.md` | chi esegue il pannello: percorso principale, scelte dell'immagine, volumi, comandi, rollback, trappole |
 | `docs/kindle4-investigation.md` | chi indaga sul percorso senza browser: architettura, prove, diagnosi, esperimenti |
 | `docs/kindle4-test-matrix.md` | chi verifica sul device: caso, stato, prova, limitazione per ogni fase |
 | `docs/preview.png` + `docs/make_preview.py` | chi scrive il README: anteprima versionata, rigenerata offline con dati inventati (`preview.png` invece è quella personale, ignorata da git) |

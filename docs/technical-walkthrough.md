@@ -739,17 +739,21 @@ subito (era già successo). Il totale lo stampa `python -m pytest -q`.
 
 | Scopo | Comando |
 |---|---|
-| installare | `python -m pip install -e .` |
+| installare (con gli strumenti del gate) | `python -m pip install -e ".[dev]"` |
 | stile | `python -m ruff check .` |
 | test | `python -m pytest -q` |
 | anteprima giorno | `python -m kindle_dashboard render -o preview.png` |
 | anteprima notte | `python -m kindle_dashboard render --night -o preview-night.png` |
-| server | `python -m kindle_dashboard serve` |
+| avviare il server (percorso principale) | `docker compose up -d` |
+| avviare il server senza Docker (sviluppo) | `python -m kindle_dashboard serve` |
 | trovare uno `stop_id` | `python -m kindle_dashboard resolve-station "Santa Marinella"` |
 | deploy estensione | `.\kindle\deploy.ps1 [-DryRun] [-TestImages]` |
 | ispezione PNG | `python kindle\inspect_png.py panel.png` |
 | varianti di formato per il device | `python kindle\make_test_images.py [--source panel.png] [--size 600x800]` |
 | rete + firewall (admin) | `powershell -ExecutionPolicy Bypass -File .\kindle\allow-lan.ps1 [-AnyProfile]` |
+
+Il pannello gira nel container (`docker compose up -d`); il venv serve per sviluppo e per il gate,
+perché l'immagine di produzione non contiene `tests/` né `pytest`/`ruff`.
 
 ---
 
