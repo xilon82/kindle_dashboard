@@ -20,20 +20,21 @@ Questa indagine parte dal ciclo già verificato: download → verifica PNG → d
 | Shell | **ash** | `trap 0` non scatta su `kill` → pid rimosso a mano |
 | Framework | **Non toccato** | non si ferma mai; warm-up mitiga i ridisegni |
 
-## Prossimi esperimenti (in ordine)
+## Esperimenti (in ordine)
 
-### E6 — Wi-Fi on/off (richiede approvazione)
+### E6 — Wi-Fi on/off (verificato il 2026-11-15)
 
-Comandi candidati da verificare con `inventory`:
+Comandi verificati con `inventory`:
 ```sh
 lipc-get-prop com.lab126.wifid cmState          # CONNECTED
-lipc-set-prop com.lab126.cmd wirelessEnable 0   # spegne
-# timeout per tornare a CONNECTED
-lipc-set-prop com.lab126.cmd wirelessEnable 1   # riaccende
+lipc-set-prop com.lab126.cmd wirelessEnable 0   # spegne -> cmState = NA
+lipc-set-prop com.lab126.cmd wirelessEnable 1   # riaccende -> CONNECTED in 6 s
 ```
 
-- La sessione SSH via Wi-Fi muore alla disconnessione: serve canale di recupero (USB + `inventory`).
-- Misurare 10 cicli: accensione → `CONNECTED` → download → disegno → spegnimento.
+- La sessione SSH via Wi-Fi muore alla disconnessione: il canale di recupero è USB + `inventory`.
+- Ciclo off/on misurato: **31 s**. È il motivo per cui il ciclo autonomo non spegne la radio a ogni
+  giro: 31 s su 90 di cadenza sarebbero un terzo del tempo, e lo standby la spegne già.
+- Il consumo reale della radio non è misurato (matrice W4): `cmState = NA` prova lo stato, non i mA.
 
 ### E7 — RTC, sospensione, ripresa (fatto il 2026-11-15)
 
@@ -66,7 +67,7 @@ sono `enabled` per il wake a livello di device (`rtc_wakeup`). `powerd` entra da
 ~600 s di inattività (`Remaining time in this state`), quindi un ciclo reale deve usare questo
 meccanismo, non un timeout proprio.
 
-### E8 — Ciclo autonomo (in corso)
+### E8 — Ciclo autonomo (3 giri verificati)
 
 Il ciclo completo non usa una cadenza fissa: chiede al server `/next` (secondi al prossimo
 aggiornamento, calcolati da `schedule.py`) e usa quel valore come durata della sospensione RTC.
@@ -109,17 +110,19 @@ Resta da misurare l'autonomia reale (20 cicli) e da decidere se avviare il ciclo
 - **Nessun comando** che spegne Wi-Fi, sospende o riavvia senza tua approvazione esplicita.
 - Canale di recupero sempre USB + `inventory` (SSH muore con il Wi-Fi).
 - Log su `G:\dashboard\dashboard.log` leggibile con framework avviato.
-- `config.xml` dichiara il menu KUAL; le nuove voci (`Wi-Fi off`, `Suspend`, `Resume`, `Cycle 20x`) si aggiungono con `menu.json`.
+- `config.xml` dichiara il menu KUAL; le voci (`Wi-Fi off`, `Wi-Fi on`, `Test Wi-Fi cycle`, `Suspend RTC (60s)`, `Resume check`, `Test RTC cycle (60s)`, `RTC info`, `RTC test arm`, `Avvia ciclo RTC`, `Test ciclo RTC (3 giri)`, `Test ciclo RTC (20 giri)`) si aggiungono con `menu.json`.
 - Nessun binario installato; solo script `sh` compatibili BusyBox 1.7.2.
 
 ## Deliverable in questa branch
 
 - `docs/kindle4-wifi-suspend-investigation.md` (questo documento)
 - `docs/kindle4-wifi-suspend-test-matrix.md` (matrice analoga a quella del rendering)
-- Aggiornamenti a `dashboard.sh.template`: `wifi_off`, `wifi_on`, `suspend`, `resume`, `cycle` (con lock pid)
+- Aggiornamenti a `dashboard.sh.template`: `wifi_off`, `wifi_on`, `wifi_cycle`, `suspend_rtc`, `resume_check`, `rtc_info`, `rtc_arm`, `rtc_cycle`, `cycle` (con lock pid)
 - Aggiornamenti a `menu.json`: voci per pilotare i test da KUAL
 - Aggiornamenti a `README.md`, `AGENTS.md`, `.clinerules` per le nuove regole
 
 ---
 
-**Stato attuale**: E4 chiuso (ciclo con download verificato). Prossimo: E6 con la tua approvazione.
+**Stato attuale**: E6, E7 ed E8 chiusi (Wi-Fi off/on, sospensione RTC, ciclo autonomo su 3 giri). Restano
+i **20 giri con la misura di batteria** (matrice C2) e la decisione se avviare il ciclo all'accensione:
+senza quelli il browser resta la visualizzazione predefinita.

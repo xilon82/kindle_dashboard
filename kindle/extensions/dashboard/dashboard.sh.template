@@ -1,12 +1,15 @@
 #!/bin/sh
-# Diagnostica per il pannello: verifica che il Kindle raggiunga il server e raccoglie informazioni.
+# Diagnostica, disegno e ciclo autonomo per il pannello su un Kindle 4.
 #
-# Il pannello NON viene disegnato da qui: su questo firmware (FW 5.x, Kindle 4) ne' eips ne' il fbink
-# incluso in KOReader mostrano PNG, e fermare il framework per fargli spazio ha prodotto schermo
-# bianco e riavvii. Il pannello si guarda nel browser: http://HOST:PORT/panel.html
+# Estensione KUAL del pannello: verifica il server, disegna il PNG con eips e pilota il ciclo
+# autonomo (download -> disegno -> sospensione RTC). Il fbink incluso in KOReader non serve: e'
+# compilato MINIMAL e non ha il supporto immagini. Fermare il framework porta schermo bianco e
+# riavvii, quindi il framework resta sempre avviato.
 #
-# Nessuna voce ferma il framework, spegne il Wi-Fi o sospende il device: al massimo disegna sullo
-# schermo con eips (inventario, immagini, pannello), cosa che si annulla uscendo dalla pagina.
+# Le voci Wi-Fi e RTC cambiano lo stato del device, e solo quando li si sceglie dal menu: la
+# sospensione, manuale o dentro `cycle`, arma prima l'allarme RTC, e se la scrittura fallisce non
+# addormenta nulla. Il canale di recupero e' USB + `dashboard.log`: con la radio spenta SSH non
+# risponde.
 #
 # File generato da deploy.ps1: i valori HOST e PORT arrivano da config.toml.
 
@@ -91,6 +94,33 @@ battery_capacity() {
         fi
     done
     return 1
+}
+
+# Percentuale di batteria con due strade: `capacity` da sysfs e, se manca, `powerd_test -s`, che
+# sul K4 stampa la batteria. Serve al test di autonomia (20 giri): senza ripiego l'inventario
+# direbbe "vuoto" proprio prima e dopo la misura che deve confrontare. `sed` e' in `which_list`
+# perche' anche la sua assenza va vista nello stesso inventario, non scoperta dopo.
+battery_percent() {
+    local capacity percent
+    capacity="$(battery_capacity 2>/dev/null)"
+    case "$capacity" in
+        '' | *[!0-9]*)
+            ;;
+        *)
+            printf '%s' "$capacity"
+            return 0
+            ;;
+    esac
+    percent="$(powerd_test -s 2>/dev/null | sed -n 's/.*[^0-9]\([0-9][0-9]*\)%.*/\1/p' | head -n 1)"
+    case "$percent" in
+        '' | *[!0-9]*)
+            return 1
+            ;;
+        *)
+            printf '%s' "$percent"
+            return 0
+            ;;
+    esac
 }
 
 # Scarica un URL in un file. BusyBox 1.7.2 non ha `wget -T`: il timeout si ottiene con un watchdog
@@ -211,7 +241,7 @@ report() {
 which_list() {
     found=""
     for name in curl wget eips fbink file ip ifconfig rtcwake lipc-get-prop lipc-set-prop \
-        lipc-wait-event powerd_test openssl od tail tr grep; do
+        lipc-wait-event powerd_test openssl od tail tr grep sed; do
         path="$(find_cmd "$name")"
         if [ -n "$path" ]; then
             found="$found $name=$path"
@@ -232,7 +262,7 @@ inventory() {
     report memoria head -n 3 /proc/meminfo
     report disco sh -c "df -h | head -n 5"
     # Batteria prima/dopo un ciclo lungo: e' l'unico modo per stimare l'autonomia.
-    report batteria sh -c "cat /sys/class/power_supply/*/capacity 2>/dev/null | head -n 1"
+    report batteria battery_percent
     which_list
     report openssl openssl version
     report wget_help sh -c "wget --help 2>&1 | head -n 5"
@@ -257,14 +287,12 @@ inventory() {
     # `wakealarm`: la scrittura pero' non arma l'allarme (verificato: write_rc=0, rilettura vuota) e
     # `powerd` non espone nessuna proprieta' RTC (9 nomi testati, tutti rifiutati).
     rtc_info
-    report rtc_wakeup sh -c 'for r in /sys/class/rtc/rtc0 /sys/class/rtc/rtc1; do printf "%s " "$r"; cat "$r/device/power/wakeup" 2>/dev/null || echo assente; done'
     report powerd_status sh -c "powerd_test -s 2>&1 | head -n 10"
     report dmesg sh -c "dmesg 2>/dev/null | tail -n 15"
     # Uso reale di powerd_test: e' il meccanismo nativo Lab126 e non va inventato. Senza argomenti
     # stampa l'uso; `-h` NON e' help ma "simula power button held" (spegne lo schermo): si usa `s`,
     # che stampa solo lo stato.
     report powerd_usage sh -c "powerd_test 2>&1 | head -n 25"
-    report powerd_status sh -c "powerd_test -s 2>&1 | head -n 10"
     # Il wake da RTC dipende dall'abilitazione del device: `enabled` qui, non l'allarme.
     # Apici singoli: dentro i doppi `$r` verrebbe espanso dal chiamante (e arriverebbe vuoto).
     report rtc_wakeup sh -c 'for r in /sys/class/rtc/rtc0 /sys/class/rtc/rtc1; do printf "%s " "$r"; cat "$r/device/power/wakeup" 2>/dev/null || echo assente; done'
@@ -551,8 +579,8 @@ suspend_rtc() {
     return 0
 }
 
-# Verifica se l'ultimo risveglio è stato da RTC (lettura approssimativa via powerd_test).
-# Su Kindle 4 powerd_test -s mostra lo stato corrente; qui leggiamo solo che siamo vivi.
+# Registra che il device è sveglio e lo stato del Wi-Fi. Non prova nulla sulla ripresa: quella
+# prova è l'uptime continuo che `suspend_rtc` scrive appena torna, non una proprietà di powerd.
 resume_check() {
     log "resume_check: device risvegliato"
     state=$(wifi_state)
@@ -560,15 +588,13 @@ resume_check() {
     return 0
 }
 
-# Esegue un ciclo completo: programma risveglio RTC, sospende, e al risveglio verifica.
-# Attenzione: il device si spegne davvero; lo script non continua dopo la sospensione.
-# Questa funzione serve solo a programmare e lanciare la sospensione; al risveglio
-# il device riparte da KUAL o dalla home, non da qui.
+# Prova manuale in un comando solo: `suspend_rtc` arma l'allarme, sospende e **riprende** nello
+# stesso processo, quindi la riga "risvegliato" che scrive è la prova della ripresa. Il ciclo
+# autonomo (`cycle`) chiama `suspend_rtc` direttamente a ogni giro.
 rtc_suspend_cycle() {
     local seconds=${1:-60}
     log "rtc_cycle: programmazione risveglio tra $seconds secondi e sospensione"
     suspend_rtc "$seconds" || return 1
-    # Non torniamo qui: il device si sveglia da solo e riparte da KUAL/home.
     return 0
 }
 
@@ -576,7 +602,8 @@ diag() {
     log "=== diag ==="
     log "uname: $(uname -a 2>&1)"
     log "wget: ${WGET:-ASSENTE} | eips: ${EIPS:-ASSENTE} | fbink: ${FBINK:-ASSENTE}"
-    log "batteria: $(battery_capacity 2>/dev/null || echo sconosciuta)%"
+    battery="$(battery_percent 2>/dev/null)"
+    log "batteria: ${battery:-sconosciuta}%"
     log "url pannello: http://$HOST:$PORT/panel.html"
     log "url nativa: $(panel_url)"
     check

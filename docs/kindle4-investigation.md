@@ -301,26 +301,28 @@ uccide il processo.
 | Interazione con l'interfaccia Amazon | **Parziale** | il pannello copre KUAL a ogni giro: l'interfaccia si usa solo fra due disegni; warm-up di 3 disegni a 5 s per ridurre la sovrapposizione iniziale (§5.5) |
 | Browser | **Verificato dall'uso reale** | pagina con meta refresh e PNG statico; nessun JS |
 | Wi-Fi: stato radio (lettura) | **Verificato** | `lipc-get-prop com.lab126.wifid cmState` → `CONNECTED` |
-| Wi-Fi on/off | **Non testato** | nessun comando eseguito; nessuno script di questa branch spegne la radio |
-| RTC e sospensione: meccanismo | **Parziale** | `/sys/power/state` = `standby mem`; `rtc0` = `mxc_rtc`, `rtc1` = `pmic_rtc`; `rtcWakeup` mai impostato |
-| Risveglio RTC / ripresa del processo | **Non testato** | nessun comando eseguito |
+| Wi-Fi on/off | **Verificato** (branch successiva) | `wifi_off: richiesto` → `cmState = NA`; `wifi_on: CONNECTED (dopo 6 s)`; ciclo off/on completo 31 s (matrice W2-W3) |
+| RTC e sospensione: meccanismo | **Verificato** (branch successiva) | `rtc1/wakealarm` accetta `since_epoch + N`; `/sys/power/state` = `standby mem`; `powerd` non ha proprietà RTC (S1-S2) |
+| Risveglio RTC / ripresa del processo | **Verificato** (branch successiva) | sospeso 13:55:25, risvegliato 13:56:26 (**61 s**) con uptime continuo (S3-S4) |
 | Compatibilità BusyBox 1.7.2 | **Verificato** | `command -v`, `grep -E` e `wget -T` assenti: script adattato e verificato in container |
-| Ciclo completo periodico | **Non testato** | dipende dai passi precedenti |
+| Ciclo completo periodico | **Verificato su 3 giri** | `cycle 3`: risvegli a 92/91/91 s, uptime continuo, download riuscito; 20 giri e autonomia ancora da misurare (C1, C2, C8) |
 
-**Diagnosi (aggiornata al 2026-11-14)**: disegno e persistenza sono **verificati**: `eips` disegna
+**Diagnosi (aggiornata al 2026-11-15)**: disegno e persistenza sono **verificati**: `eips` disegna
 immagini 8 bit con il framework avviato, e un ciclo in background le riprende dopo l'uscita da KUAL.
-Il vecchio «schermo bianco» era un test falsato dal `framework stop` (due variabili insieme). Restano
-da dimostrare il **download dal PC nel ciclo**, il **Wi-Fi on/off** e la **ripresa RTC**: nessuno dei
-tre è stato eseguito. Il vincolo di formato (solo 8 bit, RGB reso male) non tocca il pannello.
+Il vecchio «schermo bianco» era un test falsato dal `framework stop` (due variabili insieme). Anche
+**download dal PC, Wi-Fi on/off e ripresa RTC** sono stati dimostrati dopo questa indagine: `cycle`
+scarica, disegna, sospende con `rtc1` e riprende (3 giri, risvegli 92/91/91 s, uptime continuo).
+Restano i 20 giri con la misura di batteria. Il vincolo di formato (solo 8 bit, RGB reso male) non
+tocca il pannello.
 
 ## 7. Perché il browser resta la baseline
 
-Il browser è la baseline **per scelta prudente, non perché il framebuffer sia inutilizzabile**: è
-l'unico percorso con una prova di successo ripetuta, non richiede nulla sul device e non può
-lasciarlo in uno stato strano. Il disegno nativo ha ora due prove (`images` §5.2 e `loop` §5.3), ma
-non un ciclo completo: mancano download dal PC, Wi-Fi on/off, ripresa RTC e una misura di batteria.
-In più il pannello nativo copre l'interfaccia mentre è a schermo. Il costo del browser è noto solo a
-metà: la batteria con la pagina aperta per ore **non è stata misurata**.
+Il browser è la baseline **per scelta prudente, non perché il framebuffer sia inutilizzabile**: non
+richiede nulla sul device e non può lasciarlo in uno stato strano. Il disegno nativo ha ora tre prove
+(`images` §5.2, `loop` §5.3 e `cycle`: download + disegno + ripresa RTC su 3 giri), ma non una misura
+di autonomia: senza i 20 giri con la batteria prima e dopo non si può dire che convenga. In più il
+pannello nativo copre l'interfaccia mentre è a schermo. Il costo del browser è noto solo a metà: la
+batteria con la pagina aperta per ore **non è stata misurata**.
 
 Due dettagli che l'indagine ha chiarito e che vanno tenuti fermi:
 
@@ -387,26 +389,27 @@ Confronto con le fonti esterne già citate nel mandato (`wiki.mobileread.com/wik
 discussione sulle differenze fra versioni). **Non** installare il fbink completo né altri binari
 senza approvazione.
 
-### E6 — Wi-Fi acceso/spento (richiede approvazione)
+### E6 — Wi-Fi acceso/spento (esito)
 
-Da provare solo **dopo** che il disegno funziona, altrimenti si misura un ciclo che non mostra
-niente. Comandi candidati (da verificare prima con `lipc-get-prop`):
+Eseguito nella branch successiva (`investigation/kindle4-wifi-suspend`) con il Kindle raggiungibile
+via USB, perché la sessione SSH via Wi-Fi muore alla disconnessione. Comandi verificati:
 
 ```sh
-lipc-set-prop com.lab126.cmd wirelessEnable 0
-lipc-set-prop com.lab126.cmd wirelessEnable 1
-lipc-get-prop com.lab126.wifid cmState          # atteso CONNECTED, con timeout massimo
+lipc-set-prop com.lab126.cmd wirelessEnable 0   # cmState passa a NA
+lipc-set-prop com.lab126.cmd wirelessEnable 1   # ritorno a CONNECTED in 6 s
+lipc-get-prop com.lab126.wifid cmState
 ```
 
-La sessione SSH via Wi-Fi muore alla disconnessione: prima servono accesso USB o un secondo canale
-di controllo. Nessuno script di questa branch spegne la radio.
+Il ciclo off/on completo dura 31 s: è il motivo per cui il ciclo autonomo **non** spegne la radio a
+ogni giro (lo standby la spegne già e al risveglio resta associata). Matrice W2-W3.
 
-### E7 — RTC, sospensione, ciclo completo
+### E7 — RTC, sospensione, ciclo completo (esito)
 
-Non implementato di proposito. Prima va verificato il meccanismo (`lipc-set-prop -i
-com.lab126.powerd rtcWakeup <secondi>`, `powerd_test` per osservare gli stati), poi un singolo
-risveglio breve, poi un ciclo con lock, uscita manuale e log; 20 cicli e una misura di batteria su
-più ore sono il criterio per parlare di autonomia. Un reboot non è una ripresa.
+La strada ipotizzata qui (`lipc-set-prop com.lab126.powerd rtcWakeup <secondi>`) **non esiste** su
+questo firmware: nove nomi di proprietà RTC sono stati rifiutati. Funziona `rtc1/wakealarm` scritto
+come `since_epoch + N`, seguito da `echo mem > /sys/power/state`: sospensione di 61 s con uptime
+continuo, poi `cycle` verificato su 3 giri (risvegli a 92/91/91 s). Restano i 20 giri e la misura di
+batteria: senza quelli non si parla di autonomia. Un reboot non è una ripresa.
 
 ## 9. Cosa è cambiato in questa branch
 
@@ -420,8 +423,9 @@ più ore sono il criterio per parlare di autonomia. Un reboot non è una ripresa
 | `docs/kindle4-investigation.md`, `docs/kindle4-test-matrix.md` | questo rapporto e la matrice dei test |
 
 Non toccati: endpoint, renderer, modello, configurazione, pagina HTML, cadenza di aggiornamento.
-Nessun comando ferma il framework, spegne il Wi-Fi o sospende il device, e nessun binario è stato
-installato o sostituito.
+In questa branch nessun comando ferma il framework, spegne il Wi-Fi o sospende il device, e nessun
+binario è stato installato o sostituito. Wi-Fi e sospensione arrivano nella branch successiva
+(`investigation/kindle4-wifi-suspend`), con le voci di menu dedicate.
 
 Segreti: l'URL iCal privato (`config.toml`, ignorato da git) e l'IP del PC non compaiono in questo
 documento; nel log del device restano host e porta del server, che sono dati di rete locale.
