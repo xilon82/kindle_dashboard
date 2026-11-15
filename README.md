@@ -188,7 +188,8 @@ powershell -ExecutionPolicy Bypass -File .\kindle\allow-lan.ps1   # da amministr
 ```
 
 `deploy.ps1` rileva da solo l'unità del Kindle (quella con `documents\` e `system\`), l'IP del PC e
-legge porta e cadenza da `config.toml`.
+legge porta e cadenza da `config.toml` con il Python del venv (o quello nel `PATH`): è l'unico punto
+in cui il deploy ha bisogno di Python, mentre il server gira nel container.
 
 ### Vederlo sul Kindle: il browser
 

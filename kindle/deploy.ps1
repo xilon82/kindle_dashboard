@@ -44,14 +44,20 @@ $ErrorActionPreference = "Stop"
 $sourceDir = Join-Path $PSScriptRoot "extensions\dashboard"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
+# Il pannello gira nel container: qui serve solo leggere config.toml. Si usa il Python del venv se
+# c'è (così il deploy funziona senza attivare la shell), altrimenti `python` nel PATH.
+$venvPython = Join-Path $repoRoot ".venv\Scripts\python.exe"
+$pythonExe = if (Test-Path -LiteralPath $venvPython) { $venvPython } else { "python" }
+
 Push-Location $repoRoot
 try {
-    $settings = @(& python -c "from kindle_dashboard.config import load_config; c = load_config(); print(c.server.port)")
+    $settings = @(& $pythonExe -c "from kindle_dashboard.config import load_config; c = load_config(); print(c.server.port)")
+    $settingsExit = $LASTEXITCODE
 } finally {
     Pop-Location
 }
-if ($settings.Count -lt 1) {
-    throw "lettura di config.toml fallita (output: $settings). Esegui prima: python -m kindle_dashboard render"
+if ($settingsExit -ne 0 -or $settings.Count -lt 1) {
+    throw ('lettura di config.toml fallita con ' + $pythonExe + ': controlla il file e che il venv abbia le dipendenze (python -m pip install -e ".[dev]").')
 }
 $port = [int]$settings[0]
 
@@ -105,6 +111,10 @@ Write-Host "Destinazione: $scriptPath"
 if ($DryRun) {
     Write-Host "`n--- DryRun: nessuna scrittura. Prime righe di dashboard.sh ---"
     Write-Host (($rendered -split "`n")[0..7] -join "`n")
+    # HOST e PORT non sono nelle prime righe (sono commenti): stamparli è l'unica verifica che il
+    # Kindle riceva l'IP giusto invece dell'adattatore virtuale di Docker/WSL.
+    Write-Host "`nValori renderizzati:"
+    Write-Host ((($rendered -split "`n") | Where-Object { $_ -match "^(HOST|PORT)=" }) -join "`n")
     return
 }
 
@@ -150,6 +160,7 @@ if ($networkProfile -and $networkProfile.NetworkCategory.ToString() -eq "Public"
 }
 
 Write-Host ""
-Write-Host "Sul PC:  python -m kindle_dashboard serve"
+Write-Host "Sul PC (percorso principale): docker compose up -d"
+Write-Host "Senza Docker (sviluppo):       python -m kindle_dashboard serve"
 Write-Host "Sul Kindle: browser su http://$HostAddress`:$port/panel.html (KUAL > Dashboard per la diagnostica)"
 Write-Host "Log del device: /mnt/us/dashboard/dashboard.log"
