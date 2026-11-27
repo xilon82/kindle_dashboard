@@ -1,22 +1,23 @@
 # Docker per kindle-dashboard: guida didattica
 
 > Cosa risolve Docker in questo progetto, come si usa, dove stanno le trappole.
-> Docker è l'ambiente di **deploy**; il venv ([docs/venv.md](venv.md)) resta l'ambiente di
-> **sviluppo e test**.
+> Docker è il **percorso principale** con cui il pannello gira; il venv ([docs/venv.md](venv.md))
+> resta per sviluppo, gate e didattica.
 
-## 1. Quando conviene il container (e quando no)
+## 1. Quando si usa il container (e quando il venv)
 
 | Esigenza | Strumento |
 |---|---|
-| Scrivere codice, test, lint con feedback immediato | venv |
-| Debug passo-passo nell'IDE | venv |
+| Eseguire il pannello (uso normale) | container |
 | Far girare il server 24/7 su un Raspberry Pi o un VPS | container |
 | Essere sicuri che il comportamento sia identico su un'altra macchina | container |
 | Limitare CPU/RAM del servizio senza toccare il resto dell'host | container |
+| Scrivere codice, test, lint con feedback immediato | venv |
+| Debug passo-passo nell'IDE | venv |
 
-Il container non sostituisce il venv: il venv isola i **pacchetti Python**, il container isola
-**l'intero userspace Linux** (librerie C, utente, rete, limiti di risorse). Per il confronto
-completo vedi [docs/venv.md](venv.md).
+Il container è il **percorso principale** di esecuzione; il venv resta per sviluppo e gate. Non sono
+alternativi: il venv isola i **pacchetti Python**, il container isola **l'intero userspace Linux**
+(librerie C, utente, rete, limiti di risorse). Per il confronto completo vedi [docs/venv.md](venv.md).
 
 ## 2. Prerequisiti e verifica
 
@@ -244,9 +245,10 @@ PowerShell `"${PWD}:/out"` funziona; su Linux/macOS `"$(pwd):/out"` è l'equival
 2. `.dockerignore` esclude `tests/` e l'immagine non installa `pytest`: i test non sono dentro
    l'artefatto, per scelta (l'immagine è il runtime di produzione, non un ambiente di sviluppo).
 
-Quindi test e lint si eseguono nel venv: `python -m pytest -q` e `python -m ruff check .`. Se ti
-serve davvero un container per i test, costruiscilo a parte: è un altro Dockerfile, con `tests/` nel
-contesto e `pytest` fra le dipendenze. Non piegare l'immagine di produzione a fare anche da
+Quindi test e lint si eseguono nel venv, dove arrivano dall'extra `dev` dell'installazione editable
+(`python -m pip install -e ".[dev]"`): `python -m pytest -q` e `python -m ruff check .`. Se ti serve
+davvero un container per i test, costruiscilo a parte: è un altro Dockerfile, con `tests/` nel
+contesto e la stessa installazione `".[dev]"`. Non piegare l'immagine di produzione a fare anche da
 ambiente di test.
 
 ## 5. Volumi, configurazione, segreti

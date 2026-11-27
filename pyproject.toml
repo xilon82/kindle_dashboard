@@ -14,6 +14,15 @@ dependencies = [
   "tzdata>=2024.1",
 ]
 
+# Strumenti di sviluppo, non servono a chi esegue il pannello: si installano con
+# `pip install -e ".[dev]"` dentro il venv. Il gate (ruff + pytest) gira nel venv, non nel
+# container di produzione, che non li installa (vedi docs/venv.md e docs/docker.md).
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "ruff>=0.5",
+]
+
 [project.scripts]
 kindle-dashboard = "kindle_dashboard.__main__:main"
 

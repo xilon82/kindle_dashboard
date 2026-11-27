@@ -92,8 +92,16 @@ class RenderConfig:
 
 @dataclass(frozen=True)
 class ServerConfig:
+    """Dove ascolta il server e con quale indirizzo il device lo raggiunge.
+
+    ``device_host`` esiste per non lasciare l'indirizzo del pannello in mano al DHCP: ``deploy.ps1``
+    lo scrive in ``HOST=`` sul Kindle, e senza di lui ogni cambio di IP del server rompeva il
+    pannello in silenzio (``download fallito`` nel log, immagine vecchia a schermo).
+    """
+
     host: str = "0.0.0.0"
     port: int = 8787
+    device_host: str = ""
 
 
 @dataclass(frozen=True)
@@ -141,7 +149,7 @@ _SECTION_KEYS: dict[str, tuple[str, ...]] = {
         "stop_priority",
     ),
     "render": ("font", "font_bold"),
-    "server": ("host", "port"),
+    "server": ("host", "port", "device_host"),
     # `day_seconds` non è una chiave: viene da `panel.refresh_seconds`, così orologio e ricarica
     # della pagina leggono lo stesso numero.
     "schedule": ("night_start", "night_end", "night_refresh_seconds"),
@@ -220,6 +228,16 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
         ),
     )
 
+    device_host = _str(server, "device_host", "", where="server").strip()
+    # Un indirizzo e basta: `http://` o una porta qui verrebbero composti in un URL sbagliato
+    # (`http://http://...`) e il Kindle passerebbe il ciclo a dire `download fallito` senza dire
+    # perché. Il TOML non lo impedirebbe, quindi la validazione sta qui.
+    if device_host and any(mark in device_host for mark in ("://", "/", ":", " ")):
+        raise ConfigError(
+            "[server] device_host deve essere un solo indirizzo (es. 192.168.1.14 o "
+            f"server.local), senza schema né porta: trovato {device_host!r}. La porta è [server] port"
+        )
+
     return Config(
         panel=panel_config,
         weather=WeatherConfig(
@@ -259,6 +277,7 @@ def load_config(path: Path | str = LOCAL_CONFIG_FILENAME) -> Config:
         server=ServerConfig(
             host=_str(server, "host", "0.0.0.0", where="server").strip(),
             port=_int(server, "port", 8787, where="server", minimum=1, maximum=65535),
+            device_host=device_host,
         ),
         schedule=schedule_config,
         cache_dir=config_path.parent / _str(cache, "dir", "cache", where="cache").strip(),

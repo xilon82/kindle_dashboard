@@ -14,22 +14,29 @@ offline con `python docs/make_preview.py`: nessuna rete, nessun `config.toml`.
 
 ## Requisiti
 
-- PC acceso con **Python 3.11+** (verificato su Windows 11, Python 3.13) — *oppure* **Docker + Compose** (vedi [Avvio con Docker](#avvio-con-docker-alternativa-al-venv)).
+- **Docker + Compose** (percorso principale: vedi [Avvio con Docker](#avvio-con-docker-percorso-principale)) — *oppure* PC con **Python 3.11+** per sviluppo, anteprime e gate (verificato su Windows 11, Python 3.13).
 - Kindle jailbroken con **KUAL** installato e **KOReader** (fornisce il binario `fbink`), collegato
   alla stessa rete del PC. Verificato su un Kindle 4 (`reader.lua` riporta `device Kindle4`,
   600x800 @ 167 dpi). Attenzione: il Kindle 4 ha solo Wi-Fi **2.4 GHz**, quindi il PC deve essere
   raggiungibile da quell'SSID (stessa subnet).
 - Nessuna API key: meteo e mare da Open-Meteo, treni da Transitous.
 
-## Installazione (venv nativo)
+## Installazione per lo sviluppo (venv)
+
+Il pannello si esegue con Docker (sezione [Avvio con Docker](#avvio-con-docker-percorso-principale)):
+quanto segue serve per sviluppo, gate e anteprime, ed è il percorso didattico di
+[docs/venv.md](docs/venv.md).
 
 Da un venv dedicato, così le dipendenze non finiscono nell'ambiente globale:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e .
+python -m pip install -e ".[dev]"
 ```
+
+L'extra `[dev]` aggiunge `pytest` e `ruff`, gli strumenti del gate: senza di lui il pannello funziona
+lo stesso, ma `python -m pytest` e `python -m ruff` non sarebbero disponibili nel venv.
 
 Su Windows il pacchetto `tzdata` è obbligatorio: il sistema non fornisce il database dei fusi
 orari usato da `zoneinfo`. È dichiarato in `pyproject.toml`, non serve installarlo a mano.
@@ -66,7 +73,8 @@ fallire l'avvio con un messaggio che indica la sezione giusta, invece di essere 
 | `trains` | `stop_details` | `false` | seconda riga per treno con le fermate che corrispondono a `destinations` (una richiesta HTTP per treno) |
 | `trains` | `stop_priority` | `[]` | fermate da tenere sempre quando la riga non basta: le altre vengono ridotte |
 | `render` | `font`, `font_bold` | vuoto | percorsi TTF alternativi a Liberation Sans, che viaggia nel pacchetto (`kindle_dashboard/render/fonts/`) |
-| `server` | `host`, `port` | `0.0.0.0`, 8787 | dove ascolta il PC |
+| `server` | `host`, `port` | `0.0.0.0`, 8787 | dove ascolta il server |
+| `server` | `device_host` | vuoto | indirizzo con cui il Kindle raggiunge il server: `deploy.ps1` lo scrive in `HOST=`. Vuoto = IP della scheda della rotta di default; con un IP **riservato dal router** l'indirizzo non cambia più |
 | `schedule` | `night_start`, `night_end` | `23:00`, `06:30` | fascia notturna (finestra anche a cavallo di mezzanotte) |
 | `schedule` | `night_refresh_seconds` | `3600` | ricarica di notte; di notte l'ora è sostituita da `NOTTE` |
 | `cache` | `dir` | `cache` | ultimo payload buono, mostrato quando una fonte cade |
@@ -159,11 +167,17 @@ Anteprima sul PC (nessun device richiesto):
 python -m kindle_dashboard render -o preview.png
 ```
 
-Server per il Kindle:
+Server per il Kindle (percorso principale, nel container):
+
+```bash
+docker compose up -d
+# pannello: http://localhost:8787/panel.png
+```
+
+Senza Docker (sviluppo):
 
 ```powershell
 python -m kindle_dashboard serve
-# pannello: http://localhost:8787/panel.png
 ```
 
 Estensione KUAL sul Kindle collegato via USB:
@@ -174,22 +188,54 @@ Estensione KUAL sul Kindle collegato via USB:
 powershell -ExecutionPolicy Bypass -File .\kindle\allow-lan.ps1   # da amministratore: rete + firewall
 ```
 
-`deploy.ps1` rileva da solo l'unità del Kindle (quella con `documents\` e `system\`), l'IP del PC e
-legge porta e cadenza da `config.toml`.
+`deploy.ps1` rileva da solo l'unità del Kindle (quella con `documents\` e `system\`) e legge
+`config.toml` con il Python del venv (o quello nel `PATH`): è l'unico punto in cui il deploy ha
+bisogno di Python, mentre il server gira nel container. Dal file prende la porta, `[panel]
+refresh_seconds` e l'indirizzo da scrivere in `HOST=`:
 
-### Vederlo sul Kindle: il browser
+- `[server] device_host` se è impostato (l'IP riservato al server);
+- altrimenti l'IPv4 della scheda che regge la rotta di default, non il primo dell'elenco (con
+  Docker/WSL il primo è un adattatore virtuale che il Kindle non raggiunge);
+- `-HostAddress <ip>` vince su entrambi.
 
-Sul Kindle apri il browser (**Home → Menu → Browser**) e digita:
+Prima di scrivere prova `http://<indirizzo>:<porta>/health` e, se non risponde, lo dice subito: un
+deploy "riuscito" verso un server spento lascia il device a scaricare nulla a ogni giro.
+
+### Vederlo sul Kindle: il ciclo nativo (predefinito)
+
+Sul Kindle, da KUAL: **Dashboard → Avvia pannello (ciclo RTC)**. Lo script scarica
+`http://<indirizzo>:8787/panel.png?h=800`, lo disegna con `eips` e **sospende il device** con
+l'allarme RTC; al risveglio riscarica e ridisegna. **Ferma ciclo** ferma tutto subito, e il file
+`STOP` su `/mnt/us/dashboard/` fa lo stesso da USB.
+
+- La cadenza arriva dal server: il device chiede `/next` (90 s di giorno, `night_refresh_seconds` di
+  notte) e usa quel valore come durata della sospensione. La regola resta in `schedule.py`.
+- Il PNG nativo è **600x800**: copre tutto il framebuffer (con 720 gli ultimi 80 px restavano quelli
+  di KUAL, «pagina 1 di 2»). `h` è validato (200-1600) e senza parametro vale la configurazione.
+- Se il server non risponde il ciclo **tiene l'ultima immagine buona** e allunga l'attesa (300 s, poi
+  600, 1200, fino a 1800) invece di svegliare il device ogni 90 s per ore.
+- Il Wi-Fi **resta associato** durante lo standby (provato: download riuscito 5 s dopo il risveglio),
+  quindi il ciclo non spegne la radio a ogni giro.
+- Mentre il ciclo gira il pannello copre l'interfaccia: KUAL si raggiunge nella pausa fra due disegni.
+
+Alimentazione da caricatore, non dalla porta USB del PC: una prova con la USB collegata si è chiusa
+con un riavvio del device (`wdog: Abnormal reset detected`).
+
+### Di ripiego: il browser
+
+Senza il ciclo nativo — o per guardare la pagina da un altro device — apri il browser sul Kindle
+(**Home → Menu → Browser**) e digita:
 
 ```
-http://<ip-del-pc>:8787/panel.html
+http://<indirizzo>:8787/panel.html
 ```
 
 La pagina mostra il PNG e si **ricarica da sola** ogni `refresh_seconds`, e a ogni ricarica il
 pannello viene **ridisegnato con l'ora corrente** e i dati raccolti in quel momento: non c'è un TTL
-separato, quindi orologio e dati non possono disallinearsi. Non serve installare nulla
-sul device e non si tocca il framework: l'unità USB resta disponibile, il Kindle si comporta
-normalmente e per fermare il pannello basta uscire dal browser.
+separato, quindi orologio e dati non possono disallinearsi. Non serve installare nulla sul device e
+non si tocca il framework: l'unità USB resta disponibile, il Kindle si comporta normalmente e per
+fermare il pannello basta uscire dal browser. La tela servita qui è **600x720** (la barra degli
+indirizzi toglie ~70 px).
 
 Di notte (finestra `[schedule]`, default **23:00–06:30**) la pagina si ricarica ogni
 `night_refresh_seconds` e al posto dell'ora compare **`NOTTE`**: l'ora sarebbe vecchia fino a un'ora,
@@ -197,12 +243,13 @@ mentre il footer `dati HH:MM` continua a dire quando i dati sono stati raccolti.
 supera mai il cambio di fascia, quindi alle 06:29 la pagina si ricarica entro pochi secondi e torna
 alla cadenza diurna. Per vedere l'anteprima notturna senza aspettare le 23: `render --night`.
 
-Per tenerlo visibile: alimentazione da caricatore (non dalla porta USB del PC) e timeout schermo al
-massimo nelle impostazioni. Se compare il salvascherino, un tocco riporta la pagina.
+Per tenerlo visibile: timeout schermo al massimo nelle impostazioni. Se compare il salvascherino, un
+tocco riporta la pagina.
 
-### Avvio con Docker (alternativa al venv)
+### Avvio con Docker (percorso principale)
 
-Se preferisci non installare Python e dipendenze sull'host, puoi usare Docker.  
+Il container è il modo principale di eseguire il pannello: non serve installare Python e dipendenze
+sull'host.  
 Requisiti: **Docker Engine + plugin Compose v2** (`docker compose`; su Ubuntu recente il pacchetto
 è `docker-compose-v2`, oppure si installa il plugin dal repository Docker). Su Windows/macOS basta
 Docker Desktop avviato.
@@ -261,14 +308,16 @@ cp config.example.toml config.toml
 vim config.toml                    # lat/lon, calendari, treni, ecc.
 docker compose up -d
 ```
-Il Kindle punterà a `http://<ip-target>:8787/panel.html`.
+Il Kindle punterà a `http://<ip-target>:8787/panel.png` (ciclo nativo) e a
+`http://<ip-target>:8787/panel.html` nel browser di ripiego: l'indirizzo si fissa in
+`[server] device_host` e si scrive sul device con `.\kindle\deploy.ps1`.
 
 Gli aggiornamenti successivi (fetch dei tag, backup dell'immagine, build, verifica, rollback) sono in
 [docs/docker.md §7](docs/docker.md#aggiornare-un-server-di-casa-via-ssh).
 
 ---
 
-### Avvio automatico del server (senza Docker)
+### Avvio automatico del server senza Docker (sviluppo)
 
 Il pannello si aggiorna solo se il server sul PC è acceso. Per non lanciarlo a mano:
 
@@ -292,34 +341,65 @@ sistema: `-Disable` cancella la scorciatoia e l'avvio automatico sparisce.
 - Per fermarlo senza disattivare l'avvio automatico:
   `Get-NetTCPConnection -LocalPort 8787 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess }`.
 
-### Estensione KUAL (diagnostica)
+### Estensione KUAL
 
-L'estensione in `kindle/extensions/dashboard/` non disegna nulla: serve a capire perché il Kindle non
-raggiunge il PC. Voci:
+L'estensione in `kindle/extensions/dashboard/` è il modo in cui il Kindle mostra il pannello: la prima
+voce avvia il ciclo nativo, le altre servono a capire perché non funziona. Voci, in ordine di menu:
 
 | Voce | Cosa fa |
 |---|---|
-| Verifica server | scarica `/panel.png` e scrive esito e dimensione in `/mnt/us/dashboard/dashboard.log` |
-| Diagnostica | kernel, percorsi di `wget`/`eips`, batteria, URL e poi la verifica server |
+| Avvia pannello (ciclo RTC) | ciclo autonomo: scarica, disegna, chiede `/next`, sospende il device con l'RTC e aggiorna al risveglio; si ferma con **Ferma ciclo** |
+| Ferma ciclo | ferma subito il ciclo (file `STOP` + `kill`) |
+| Verifica server | scarica `/panel.png` con timeout 15 s e scrive esito, dimensione e «è davvero un PNG» in `/mnt/us/dashboard/dashboard.log` |
+| Diagnostica | kernel, percorsi di `wget`/`eips`/`fbink`, batteria, URL e poi la verifica server |
+| Inventario | sola lettura: `/etc/version`, `/proc`, `/sys`, presenza di `curl`/`file`/`rtcwake`, geometria da `eips -i`, stato Wi-Fi, batteria (da `capacity` oppure da `powerd_test -s`). Serve a capire cosa c'è su *questo* firmware |
+| Mostra panel.png | disegna l'ultimo PNG scaricato: separa il problema del download da quello del rendering |
 | Tieni schermo acceso | `lipc-set-prop com.lab126.powerd preventScreenSaver 1`: niente salvascherino mentre guardi il pannello |
 | Riattiva salvascherino | riporta la proprietà a `0` quando hai finito |
+| Ciclo di ripiego (30s) | come il ciclo nativo ma **senza sospendere** il device: ridisegna ogni 30 s, utile quando l'RTC non è affidabile |
+| Test immagini (eips) | disegna le varianti di formato di `cache\testimages` (grigi, 1 bit, RGB, palette, JPEG) senza fermare il framework |
+| Test ciclo RTC (3 giri) | come Avvia pannello, ma si ferma da solo dopo 3 giri: fra due sospensioni la finestra per fermarlo è di pochi secondi |
+| Test ciclo RTC (20 giri) | misura di autonomia: 20 giri da 90 s (~30 min) **con caricatore e USB staccata**; l'inventario riporta la batteria prima e dopo |
+| Wi-Fi on | riaccende la radio e aspetta `CONNECTED` (timeout 60 s) |
+| Wi-Fi off | spegne la radio Wi-Fi (`lipc-set-prop com.lab126.cmd wirelessEnable 0`) |
+| Test Wi-Fi cycle | spegne e riaccende il Wi-Fi misurando il tempo per tornare a `CONNECTED` |
+| RTC info (sola lettura) | `name`, `since_epoch` e `wakealarm` di `rtc0` e `rtc1` |
+| RTC test arm (120s) | arma l'allarme a 120 s e lo rilegge, **senza** sospendere: prova che il driver accetta il valore |
+| Suspend RTC (60s) | scrive `since_epoch+60` in `rtc1/wakealarm`, entra in standby e registra il risveglio (verificato: 61 s, uptime continuo) |
+| Test RTC cycle (60s) | come sopra, in un comando solo |
+| Resume check | registra che il device è risvegliato e lo stato del Wi-Fi |
+
+Nessuna di queste voci ferma il framework. Le voci Wi-Fi e RTC cambiano lo stato del device, e solo
+quando le scegli: la sospensione arma prima l'allarme RTC e, se la scrittura fallisce, non addormenta
+nulla. Il ciclo nativo sospende il device a ogni giro con lo stesso meccanismo. Il recupero passa da
+USB e `dashboard.log`, perché con la radio spenta SSH non risponde. Mentre il ciclo gira il pannello
+copre l'interfaccia a ogni giro, quindi KUAL si raggiunge nella pausa fra due disegni; **Ferma ciclo**
+è immediato. Le varianti di formato si generano con `python kindle\make_test_images.py` e si copiano
+con `.\kindle\deploy.ps1 -TestImages`.
 
 Con il pannello aperto nel browser il Kindle va in salvascherino dopo il timeout di inattività: usa
 **Tieni schermo acceso** (vale fino al riavvio del device) e, se serve, aumenta il timeout schermo
 nelle impostazioni. L'esito del comando finisce nel log, così si vede subito se il firmware lo accetta.
 
-Il motivo per cui il disegno nativo non è la strada predefinita è documentato nei "Limiti noti".
+Come è stato verificato il ciclo nativo — e con quali limitazioni — è in
+[docs/kindle4-investigation.md](docs/kindle4-investigation.md),
+[docs/kindle4-wifi-suspend-investigation.md](docs/kindle4-wifi-suspend-investigation.md) e
+[docs/kindle4-test-matrix.md](docs/kindle4-test-matrix.md).
 
 ## Comandi
 
 | Comando | Cosa fa |
 |---|---|
+| `docker compose up -d` | avvia il server nel container (percorso principale) |
 | `python -m kindle_dashboard render [-o preview.png]` | genera il PNG una volta |
-| `python -m kindle_dashboard serve` | serve `/panel.png` e `/health` |
+| `python -m kindle_dashboard serve` | serve `/panel.png` e `/health` senza Docker (sviluppo) |
 | `python -m kindle_dashboard resolve-station "Genova Brignole"` | trova lo `stop_id` |
-| `.\kindle\deploy.ps1` | copia l'estensione KUAL sul Kindle |
+| `.\kindle\deploy.ps1 [-DryRun] [-TestImages]` | copia l'estensione KUAL sul Kindle (con o senza le varianti di formato) |
+| `python kindle\inspect_png.py <file>` | formato, dimensione, modo, profondità e interlace di un'immagine |
+| `python kindle\make_test_images.py [--source panel.png]` | scheda di test con timestamp e varianti in `cache\testimages` |
 
-Tutti accettano `--config <file>` dopo il sottocomando.
+Tutti accettano `--config <file>` dopo il sottocomando; gli script `kindle\*.py` sono diagnostica
+locale e non leggono `config.toml`.
 
 ## Troubleshooting
 
@@ -329,14 +409,16 @@ Tutti accettano `--config <file>` dopo il sottocomando.
 | Nel pannello compaiono quadratini al posto delle accentate o del segno di moltiplicazione | il font scelto non ha quei caratteri: succede dove non è installato nessun TTF, e Pillow usa un font incorporato incompleto | installa un font di sistema (su Debian/Ubuntu `fonts-liberation`, `fonts-dejavu-core` come riserva) oppure indica un `.ttf` in `[render] font` e `font_bold` |
 | Nel container le righe finiscono con `…` (`REG 12…`, `SAB 18°/…`, `poco mosso`) mentre l'anteprima sul PC è integra | l'anteprima e il device misurano font diversi: le colonne, misurate con `font.getlength`, tagliano il testo | il PC non sta usando il TTF incluso nel pacchetto. Diagnosi: `python -c "from kindle_dashboard.render import fonts; print(fonts.load(19).path)"` deve stampare un percorso dentro `kindle_dashboard/render/fonts/`, non `C:\WINDOWS\Fonts\…`; se esce dal repo, reinstalla (`python -m pip install -e .`) o togli l'override in `[render] font`/`font_bold`. Se il PC è a posto, è il container a essere vecchio: `docker compose build` + `docker rm -f kindle-dashboard` + `docker compose up -d`. Per il confronto usa `python -m kindle_dashboard render -o preview.png` |
 | Voglio cambiare o aggiornare il font del pannello | i TTF stanno nel repo (`kindle_dashboard/render/fonts/`), così PC e device usano lo stesso file | sostituisci `LiberationSans-Regular.ttf`/`LiberationSans-Bold.ttf` (e `OFL.txt` se cambi famiglia: la licenza deve viaggiare con i binari) e rifai **tutte** le misure: `python -m pytest -q`, `python -m kindle_dashboard render -o preview.png`, poi guarda il PNG. Per il container serve ricostruire **e** ricreare (`docker compose build` + `docker rm -f kindle-dashboard` + `docker compose up -d`) |
-| Il Kindle non scarica nulla | verifica `http://<ip>:8787/panel.png` dal PC, poi dallo stesso URL nel browser del Kindle; controlla la regola firewall sulla rete privata |
+| Il Kindle non scarica nulla | verifica `http://<indirizzo>:8787/panel.png` dal PC, poi dallo stesso URL nel browser del Kindle; `.\kindle\deploy.ps1 -DryRun` stampa `HOST=`, `PORT=` e `REFRESH_SECONDS=` e prova `/health` |
+| Dopo aver installato Docker o WSL il Kindle non raggiunge più il PC | `deploy.ps1` scriveva in `HOST=` il primo IPv4 dell'elenco, che ora è l'adattatore virtuale (`192.168.208.x`, senza gateway). Ora l'ordine è `[server] device_host`, poi l'IP della scheda della rotta di default, e `-HostAddress <ip-lan>` vince su tutto: rilancia `.\kindle\deploy.ps1` |
+| L'IP del server cambia e il pannello smette di aggiornarsi | l'indirizzo è scritto in `HOST=` sul device: mettilo in `[server] device_host` con un IP **riservato dal router**, poi rilancia `.\kindle\deploy.ps1`. Il deploy prova `/health` e avvisa se il server non risponde |
 | Dal browser del Kindle "impossibile connettersi" | la rete è classificata **Public** da Windows e la regola `Private` non si applica: lancia `kindle\allow-lan.ps1` come amministratore (riclassifica la rete e apre la porta). Se alterni 2.4/5 GHz, usa `-AnyProfile`: il profilo firewall è per SSID, quindi cambiando banda la regola `Private` smetterebbe di valere |
 | Il Kindle non vede la rete Wi-Fi del PC | SSID a 5 GHz: il Kindle 4 ha solo radio 2.4 GHz, collegalo all'SSID 2.4 GHz dello stesso router (stessa subnet, senza "AP isolation") |
 | PNG scaricato ma schermo bianco/nero | `fbink` non parte: prova a mano sul device `fbink -q -c -g file=/mnt/us/dashboard/panel.png -W GC16` e leggi `/mnt/us/dashboard/dashboard.log` |
 | Il pannello si ferma da solo | standby del Kindle o estensione fermata: rilancia da KUAL e verifica che `lipc-set-prop com.lab126.powerd preventScreenSaver 1` non dia errore |
 | Funziona anche con la regola assente | qualcos'altro sta aprendo la porta: vedi il comando sotto la tabella. Una regola `python.exe` su profilo `Public` è più larga di `kindle-dashboard PORT`, che apre una sola porta |
 | Si vede ancora la versione vecchia del pannello | il server in ascolto è un'istanza precedente: `Get-NetTCPConnection -LocalPort 8787 -State Listen` e chiudi quel PID; in più ricarica la pagina (l'HTML referenzia `/panel.png?t=<timestamp>` per evitare la cache del browser) |
-| `download fallito` nel log | PC spento, IP cambiato (DHCP) o server non avviato: riserva un IP fisso al PC |
+| `download fallito` nel log | server spento, `[server] device_host` sbagliato o IP cambiato (DHCP): avvia il server, controlla che `HOST=` nel device sia raggiungibile, riserva l'IP al server e rilancia il deploy. Il ciclo tiene l'ultima immagine buona e dopo tre fallimenti allunga l'attesa fino a 30 min |
 | Non vedo "Dashboard" in KUAL | `config.xml` deve dichiarare il menu con `<menus><menu type="json" dynamic="true">menu.json</menu></menus>`: senza quel blocco KUAL non elenca l'estensione (confronta con `extensions/koreader/config.xml`, che funziona). Dopo la copia riapri KUAL; se resta invisibile, riavvia il Kindle |
 | Nel calendario vedo solo "URL pubblico" e "iframe" | il calendario non è tuo (lo sottoscrivi): Google non fornisce a chi lo sottoscrive l'indirizzo iCal. Chiedi al proprietario di passarti l'URL segreto o di rendere il calendario pubblico (allora vale `.../ical/<id>/public/basic.ics`), altrimenti serve l'API Google con OAuth |
 | Calendario vuoto | `calendar.ics_url` mancante o URL revocato (Google lo rigenera) |
@@ -354,10 +436,15 @@ Get-NetFirewallApplicationFilter | Where-Object { $_.Program -like '*python*' } 
 ## Limiti noti
 
 - Layout tarato su 600x800: altre risoluzioni scalano, ma non sono state provate sul campo.
-- **Il disegno nativo a schermo intero non è utilizzabile su questo device**: il `fbink` incluso in
-  KOReader è compilato senza supporto immagini e `eips` (in `/usr/sbin`) resta bianco con PNG in
-  scala di grigi, RGB, 1-bit e JPEG. Fermare il framework per liberare lo schermo porta a schermo
-  bianco, unità USB non più esposta e riavvii. Per questo il pannello si guarda nel browser.
+- **Il disegno nativo dipende dal server acceso.** `eips` (in `/usr/sbin`) disegna PNG **a 8 bit** con
+  il framework in esecuzione; il pannello è `L` 8 bit, cioè il formato giusto, e il `fbink` di KOReader
+  resta senza supporto immagini (`Image=No`). **Non** serve fermare il framework: era proprio quello a
+  produrre lo schermo bianco dei test vecchi. Il limite che resta è che il ciclo aggiorna il pannello
+  solo se il server risponde: con il server spento tiene l'ultima immagine buona e allunga l'attesa,
+  quindi quello a schermo può essere vecchio di ore. Prove e stato di ogni fase in
+  [docs/kindle4-investigation.md](docs/kindle4-investigation.md),
+  [docs/kindle4-wifi-suspend-investigation.md](docs/kindle4-wifi-suspend-investigation.md) e
+  [docs/kindle4-test-matrix.md](docs/kindle4-test-matrix.md).
 - Ricorrenze supportate: `FREQ` DAILY/WEEKLY/MONTHLY/YEARLY con `INTERVAL`, `COUNT`, `UNTIL` e
   `BYDAY` (solo settimanale). Altri `BY*` sono ignorati; un `TZID` sconosciuto ricade sul fuso del
   pannello.
@@ -380,8 +467,9 @@ python -m ruff check .
 python -m pytest -q
 ```
 
-I due comandi girano nel venv ([docs/venv.md](docs/venv.md)); Docker serve al deploy, non al gate
-([docs/docker.md](docs/docker.md)).
+I due comandi girano nel venv ([docs/venv.md](docs/venv.md)), che è l'ambiente di sviluppo, gate e
+didattica. Il pannello invece gira nel container ([docs/docker.md](docs/docker.md)), il cui scopo è
+l'esecuzione: l'immagine di produzione non contiene `tests/` né gli strumenti del gate.
 
 Architettura, invarianti e come estendere il progetto: [AGENTS.md](AGENTS.md).
 Percorso tecnico narrato (come funziona e perché, con i bug realmente incontrati):

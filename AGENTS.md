@@ -3,6 +3,15 @@
 > I vincoli operativi **non** sono qui: stanno in `.clinerules`.
 > Questo file descrive architettura, invarianti e come intervenire senza romperli.
 
+## Ambienti
+
+- **Container = percorso principale**: `docker compose up -d` è come il pannello gira. L'immagine è
+  il runtime di produzione: non contiene `tests/` e non installa `pytest`/`ruff`.
+- **Venv = sviluppo, gate e didattica**: `python -m pip install -e ".[dev]"`, poi
+  `python -m ruff check .` e `python -m pytest -q`; serve anche per anteprime e CLI senza Docker.
+- Il gate resta nel venv (`.clinerules` §Workflow): non piegare l'immagine di produzione a fare da
+  ambiente di test. Dettagli: `docs/docker.md` e `docs/venv.md`.
+
 ## Architettura
 
 Flusso unidirezionale, nessun ciclo:
@@ -23,7 +32,7 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
 | `cache.py` | persistere l'ultimo payload buono | contenere modelli |
 | `model.py` | dataclass immutabili | importare Pillow |
 | `render/*` | disegnare `PanelData` | fare I/O di rete |
-| `server.py` | HTTP + cache del PNG in memoria | contenere layout |
+| `server.py` | HTTP: `/panel.png` (con `?h=`), `/health`, `/next` (secondi al prossimo giro) + cache del PNG in memoria | contenere layout |
 | `__main__.py` | CLI sottile | logica di dominio |
 
 ### Invarianti
@@ -35,8 +44,10 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
 3. **Tutti gli orari sono aware e nel fuso di `config.weather.timezone`**; `ZoneInfo` si crea solo in
    `timezone_utils.zone()`.
 4. **L'ora mostrata è quella del PC** (baked nel PNG): il clock del Kindle non viene mai letto.
-5. **Il renderer produce un'immagine "L"** alla risoluzione `panel.width/height` e non ridimensiona:
-   il device non deve scalare nulla.
+5. **Il renderer produce un'immagine "L"** alla risoluzione richiesta e non ridimensiona: il device
+   non deve scalare nulla. Il server usa `panel.width/height` (600x720, la tela del browser) e accetta
+   `?h=800` (200-1600, validato) per il client nativo, che deve coprire il framebuffer 600x800:
+   con 720 gli ultimi 80 px restano quelli di KUAL (verificato sul device).
 6. **Le larghezze di colonna si misurano con `font.getlength`**, mai con pixel fissi.
 7. **L'intervallo di aggiornamento si calcola solo in `schedule.py`**: fascia corrente e clamp al
    prossimo cambio. Server e renderer leggono quel risultato, non lo ricalcolano. La stessa regola
@@ -105,6 +116,18 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    stampava quadrati al posto delle accentate). `tests/test_fonts.py` tiene fermi l'esistenza e la
    licenza del file spedito, che `load()` usi quello e l'ordine dei ripieghi. Cambiare font cambia tutte
    le misure, quindi le regole di cedimento non vanno allentate «perché tanto il font è quello».
+13. **L'indirizzo con cui il device raggiunge il server è configurazione, non un IP incollato**: sta in
+   `[server] device_host` e `deploy.ps1` lo rende in `HOST=`. Il ripiego (IP della scheda della rotta di
+   default) esiste solo per il primo avvio, ed è pericoloso su una macchina che non è il server: il
+   pannello gira su `192.168.1.187`, il PC di sviluppo è `192.168.1.14`. Con `HOST=192.168.1.14` il
+   device ha passato giorni su un'immagine vecchia, e il log diceva soltanto `download fallito`.
+   `deploy.ps1` ora prova `http://<host>:<port>/health` prima di scrivere, anche in `-DryRun`.
+14. **Un ciclo "verde" può non aver aggiornato niente**: i venti giri del 2026-11-25 sono finiti con
+   «raggiunto il limite di 20 giri» avendo avuto **venti `download fallito`**, cioè con la sospensione
+   RTC provata e il pannello mai aggiornato (e cadenza di ripiego a 30 s perché anche `/next` taceva).
+   Prima di dichiarare riuscito un ciclo si contano i download riusciti nel log, e il ciclo ora conta i
+   fallimenti, allunga l'attesa (300 → 600 → 1200 → 1800 s) e usa `[panel] refresh_seconds` come
+   cadenza di ripiego invece di `LOOP_SECONDS`.
 
 ### Configurazione
 
@@ -169,7 +192,7 @@ caricamento la rifiuta (e il test sull'esempio se ne accorge subito), se la dime
 
 | Comando | Cosa copre |
 |---|---|
-| `python -m pytest -q` | parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP |
+| `python -m pytest -q` | parsing, ricorrenze ICS, raccolta differenziata, mare (scala Douglas), config, pianificazione giorno/notte, cache, render, HTTP, allineamento menu/comandi del device |
 | `python -m ruff check .` | stile (line-length 110, regole E/F/I/UP/B/SIM/RUF) |
 | `python -m kindle_dashboard render -o preview.png` | verifica visiva reale |
 
@@ -187,20 +210,74 @@ Confermato su un Kindle 4 (`Linux kindle 2.6.31-rt11-lab126`, FBInk lo identific
 `Tequila on Yoshi`):
 
 - `wget` presente (`/usr/bin/wget`): il download del PNG funziona.
-- `eips` esiste ma in **`/usr/sbin/eips`** (non `/usr/bin`), e **non mostra immagini**: con quattro
-  formati (grigi, RGB, 1-bit, JPEG) lo schermo resta bianco pur con exit code 0.
+- `eips` esiste in **`/usr/sbin/eips`** e **disegna**, purché l'immagine sia **8 bit** e il framework
+  resti avviato: `test_l.png` (L 8 bit) e `test.jpg` → `exit=0` e visibili; `test_rgb.png` → `exit=0`
+  ma deformata; `test_1.png` e `test_p.png` → `eips: paint_image> cannot open "…":8bit only`. Il
+  pannello è `L` 8 bit, quindi il formato giusto. Il vecchio «schermo bianco con exit 0» era un test
+  falsato dal framework fermato.
 - il `fbink` incluso in KOReader è **MINIMAL**: `[FBInk] Image support is disabled in this FBInk
-  build!`.
+  build!`, e la stringa `Image support is disabled` è compilata **dentro** `koreader/fbink`
+  (offset 278.700 del binario). Non è un errore di sintassi nostro: `fbink -v` stampa
+  `FBInk 92e1270 for Kindle [Draw=Yes, Bitmap=Yes, …, Image=No, …]`.
+- firmware: `System Software Version: 001-H303_yoshi-354363`, build `Thu May 30 11:05:42 UTC 2019`
+  (`/etc/version`); kernel `2.6.31-rt11-lab126`, 256 MB di RAM.
+- framebuffer: **600x800, 8 bpp, `grayscale: 1`, formato `Y8`** (`eips -i` e `fbink -v`): è lo
+  stesso formato del PNG del pannello, quindi il formato non è mai stato la causa.
+- shell: **BusyBox 1.7.2 (2019-05-30)** senza `command -v`, senza `grep -E` e senza `wget -T`;
+  `curl`, `file`, `ip`, `ifconfig`, `rtcwake`, `powerd_test` e `od` sono assenti.
+- il framework **ridisegna quando KUAL esce**: `eips` disegna, ma l'immagine viene coperta. Un ciclo
+  in background la riprende al giro successivo e **sopravvive all'uscita** (verificato: 9 disegni in
+  2m17s); pid verificato con `kill -0`, stop immediato con `kill`. Ora il ciclo **scarica**
+  `/panel.png` a ogni giro e sostituisce l'immagine solo se il file è davvero un PNG (dimensione +
+  firma), così un errore di rete non cancella l'ultimo pannello buono. Il pannello copre KUAL mentre
+  è a schermo, quindi l'interfaccia si usa nella pausa fra due disegni. Dopo l'uscita da KUAL la home
+  ridisegna menu e minibar per qualche secondo: il ciclo fa **3 disegni ravvicinati (5 s)** di
+  warm-up prima della cadenza normale.
 - `/etc/init.d/framework stop` libera lo schermo ma porta a **schermo bianco, unità USB non più
-  esposta e riavvio** del device: non è una strada percorribile qui.
+  esposta e riavvio** del device, e **falsa i test** di disegno: non è una strada percorribile qui.
 - KUAL elenca l'estensione solo se `config.xml` contiene
   `<menus><menu type="json" dynamic="true">menu.json</menu></menus>`.
+- il mount USB basta per leggere `/mnt/us` **e** `dashboard.log` anche con il framework avviato:
+  prima di aggiungere un esperimento si legge il log, non si ricomincia da capo.
+- **risveglio RTC**: `powerd` non ha proprietà RTC (nove nomi rifiutati), `rtc0` (`mxc_rtc`) non ha
+  `wakealarm`, `rtc1` (`pmic_rtc`) sì ma conta dall'accensione: si scrive `since_epoch + N` e si
+  sospende con `echo mem > /sys/power/state`. La rilettura di `wakealarm` è vuota (driver) ma
+  l'allarme è armato: verificato **61 s con uptime continuo** (ripresa, non riavvio).
+- `powerd_test`: lo stato si legge con **`-s`**; **`-h` non è help** ma «power button held» e spegne
+  lo schermo. `powerd` entra da solo in standby dopo ~600 s di inattività. `-s` stampa anche la
+  batteria: è il ripiego di `battery_percent` quando `/sys/class/power_supply/*/capacity` non c'è.
+- **ciclo autonomo**: `cycle` disegna, chiede `/next` al server (cadenza giorno/notte), sospende con
+  l'RTC e al risveglio riscarica. Lo stop è lo stesso di `loop` (file STOP + `kill`), quindi uccide
+  il processo prima che si addormenti e non lascia il device sospeso. Verificato su 3 giri: risvegli
+  a 92/91/91 s, uptime continuo e **Wi-Fi ancora associato** (nessun `wifi_off` necessario). Due
+  `cycle 20` completi il 2026-11-15 (15:27–16:05 e 21:34–22:12) con risvegli ~91 s e uptime continuo;
+  un terzo tentativo si è invece **interrotto al giro 14 con un riavvio** (`dmesg`: `wdog: Abnormal
+  reset detected`, `rtc1 since_epoch` ripartito) con il Kindle attaccato alla USB del PC. I test dei
+  cicli vanno fatti con il caricatore e la USB staccata, leggendo il log solo alla fine.
+- **venti giri non bastano se il device non chiama il server giusto**: i run del 2026-11-24/25 sono
+  arrivati in fondo (`cycle: raggiunto il limite di 20 giri`) con **venti `download fallito`** e
+  `sospensione 30 s` perché `HOST=` puntava al PC di sviluppo invece che al server (e anche `/next`
+  taceva): hanno provato la sospensione, non il pannello. Da lì il conteggio dei fallimenti nel ciclo e
+  il backoff fino a 1800 s.
 
-Conseguenza di progetto: **la visualizzazione passa dal browser** (`/panel.html` con meta refresh);
-l'estensione KUAL è solo diagnostica (`Verifica server`, `Diagnostica`). Non reintrodurre il disegno
-nativo su questo hardware senza una prova concreta che funzioni.
+Conseguenza di progetto: **il ciclo nativo è la visualizzazione predefinita** e il browser è il ripiego
+(`/panel.html` con meta refresh, tela 600x720). La voce **Avvia pannello (ciclo RTC)** è la prima del
+menu, **Ferma ciclo** la seconda; sotto stanno le voci diagnostiche (`Verifica server`, `Diagnostica`,
+`Inventario`, `Test immagini (eips)`, `Mostra panel.png`), che usano `eips` con immagini **8 bit** senza
+fermare il framework. Le voci Wi-Fi e RTC cambiano lo stato del device, e solo su scelta esplicita dal
+menu; anche `cycle` sospende a ogni giro, con lo stesso allarme armato prima di addormentare, quindi una
+scrittura fallita non lascia il device in standby. Il recupero è USB + `dashboard.log`. Le prove sono
+`images` (formati), `loop` (persistenza) e `cycle` (download + disegno + ripresa RTC: 3 giri e due run da
+20 giri completi il 2026-11-15). Resta da registrare la batteria prima/dopo di un run **con i download
+che riescono**, che è la misura che decide se il ciclo conviene al browser.
 
-Ancora da confermare: comportamento della batteria con la pagina aperta per ore.
+Rapporto con le prove, fase per fase: `docs/kindle4-investigation.md`,
+`docs/kindle4-wifi-suspend-investigation.md` e `docs/kindle4-test-matrix.md`.
+Strumenti: `kindle/inspect_png.py` (formato/depth/interlace), `kindle/make_test_images.py` (scheda
+con timestamp + varianti in `cache/testimages`).
+
+Ancora da confermare: comportamento della batteria con il pannello nativo per giorni e con la pagina
+aperta per ore.
 
 ## File → per chi
 
@@ -210,9 +287,12 @@ Ancora da confermare: comportamento della batteria con la pagina aperta per ore.
 | `.clinerules` | chi scrive codice: vincoli e gate di commit |
 | `AGENTS.md` | agenti/sviluppatori: architettura, estensioni, mappa dei test |
 | `docs/technical-walkthrough.md` | chi studia il progetto: percorso tecnico narrato, con i bug reali |
-| `docs/venv.md` | chi sviluppa: cosa isola un venv, come crearlo, vantaggi e limiti |
-| `docs/docker.md` | chi fa deploy: scelte dell'immagine, volumi, comandi, rollback, trappole |
+| `docs/venv.md` | chi sviluppa e chi studia: cosa isola un venv, come crearlo, vantaggi e limiti (percorso didattico; il runtime principale è il container) |
+| `docs/docker.md` | chi esegue il pannello: percorso principale, scelte dell'immagine, volumi, comandi, rollback, trappole |
+| `docs/kindle4-investigation.md` | chi indaga sul percorso senza browser: architettura, prove di disegno, diagnosi, esperimenti |
+| `docs/kindle4-wifi-suspend-investigation.md` | chi indaga su Wi-Fi, sospensione RTC e ciclo autonomo: meccanismi, prove, cosa resta da misurare |
+| `docs/kindle4-test-matrix.md` | chi verifica sul device: caso, stato, prova, limitazione per ogni fase (download, rendering, Wi-Fi, RTC, ciclo) |
 | `docs/preview.png` + `docs/make_preview.py` | chi scrive il README: anteprima versionata, rigenerata offline con dati inventati (`preview.png` invece è quella personale, ignorata da git) |
 | `config.example.toml` | utente: modello di configurazione commentato |
 | `tests/` | sviluppatori: comportamento atteso, da aggiornare con le modifiche |
-| `kindle/` | deploy: estensione KUAL + script host |
+| `kindle/` | deploy: estensione KUAL + script host (`deploy.ps1`, `serve.ps1`, `autostart.ps1`) e diagnostica (`inspect_png.py`, `make_test_images.py`) |

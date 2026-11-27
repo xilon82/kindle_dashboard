@@ -10,6 +10,10 @@ Genera un PNG 600x800 (meteo, mare, Google Calendar, partenze treni) servito via
 jailbroken che lo disegna con FBInk. Nessuna API key: Open-Meteo (meteo e mare) + Transitous;
 Pillow disegna.
 
+Il **runtime principale è il container** (`docker compose up -d`). Il venv **non** è il percorso di
+esecuzione: resta per sviluppo, per il gate (`ruff` + `pytest`, che l'immagine di produzione non
+contiene) e come percorso didattico (`docs/venv.md`).
+
 ```
 kindle_dashboard/
   __main__.py        CLI: render | serve | resolve-station
@@ -29,11 +33,12 @@ tests/               pytest con fixture registrate, zero rete
 
 | Scopo | Comando esatto |
 |---|---|
-| install | `python -m pip install -e .` |
+| run (server, percorso principale) | `docker compose up -d` (`docker compose build` dopo modifiche a `Dockerfile`/`pyproject.toml`) |
+| run (server, senza Docker) | `python -m kindle_dashboard serve` |
+| install (venv: sviluppo, gate, didattica) | `python -m pip install -e ".[dev]"` (l'extra `dev` porta `pytest` e `ruff`) |
 | lint | `python -m ruff check .` |
 | test | `python -m pytest -q` |
 | run (anteprima) | `python -m kindle_dashboard render -o preview.png` |
-| run (server) | `python -m kindle_dashboard serve` |
 | deploy device | `.\kindle\deploy.ps1` (`-DryRun` per provare) |
 
 ## §Stile
@@ -80,12 +85,19 @@ Errori realmente accaduti qui, da non ripetere:
     Per gli script con effetti collaterali non filtrare l'output; al massimo redirigere a `$null`.
 11. **Il `fbink` incluso in KOReader è compilato MINIMAL** (`[FBInk] Image support is disabled in
     this FBInk build!`): non può disegnare PNG.
-12. **`eips` non mostra immagini su questo firmware**: sta in `/usr/sbin/eips` (non `/usr/bin`) e con
-    PNG in grigi, RGB, 1-bit e JPEG lo schermo resta bianco, pur restituendo exit code 0. Il codice
-    di uscita non è una prova che l'immagine sia stata disegnata.
+12. **`eips` disegna, ma solo immagini a 8 bit e con il framework in esecuzione.** Verificato il
+    2026-11-14 con il comando `images` (che **non** ferma il framework): `test_l.png` (L 8 bit)
+    `exit=0` e visibile, `test.jpg` `exit=0` e visibile, `test_rgb.png` `exit=0` ma **deformata**,
+    mentre `test_1.png` e `test_p.png` sono rifiutati con
+    `eips: paint_image> cannot open "…":8bit only`. Il vecchio «schermo bianco con exit 0» era un
+    test confuso: girava dopo `framework fermato` (§regola 13), e fermare il framework rompe il
+    disegno. Morale: un test misura una variabile sola, e `exit=0` non prova che l'immagine sia
+    corretta (l'RGB esce deformato) — la prova resta visiva. Il formato giusto è **L 8 bit**, quello
+    che il renderer produce già.
 13. **Fermare il framework non è una scorciatoia**: `/etc/init.d/framework stop` libera lo schermo
     ma porta a schermo bianco, unità USB non più esposta (quindi nessun file `STOP` raggiungibile) e
-    riavvio del device. La visualizzazione passa dal browser (`/panel.html`), non dal framebuffer.
+    riavvio del device. In più falsa i test: il vecchio `eips` «bianco» girava proprio in quello
+    stato. Con il framework avviato `eips -f -g` disegna (regola 12): è così che va provato.
 14. **Un `pid` file orfano blocca l'avvio per sempre**: se un ciclo scrive `dashboard.pid` e controlla
     solo l'esistenza del file, dopo un kill o un mount USB la voce di menu risponde "gia' in
     esecuzione" e non fa nulla. Va verificata la liveness con `kill -0`.
@@ -145,6 +157,63 @@ Errori realmente accaduti qui, da non ripetere:
     indicando quella giusta; `config.example.toml` viene caricato da un test, così una chiave nuova
     dimenticata nell'esempio fa rosso il gate. Quando aggiungi un'opzione aggiorna dataclass,
     `_SECTION_KEYS`, `config.example.toml` e la tabella in `README.md`: quattro posti, non tre.
+23. **Il log del device è già una prova: leggilo prima di riprovare.** Con il Kindle montato su USB
+    `G:\dashboard\dashboard.log` si legge anche con il framework avviato, e contiene già
+    `[FBInk] Image support is disabled…`, `eips … exit=0` e `framework fermato`. Senza leggerlo si
+    rifanno test rischiosi (fermare il framework, che toglie l'USB) per riscoprire cose scritte.
+    Un comando diagnostico però deve registrare **exit code e output sulla stessa riga** (come
+    `images`/`show`): il vecchio script salvava solo l'exit e non il comando, quindi l'errore non era
+    riproducibile. E `exit=0` di `eips` non prova che l'immagine sia a schermo (regola 12): la prova
+    resta visiva. Infine, una cartella citata da uno script (`cache\testimages` in `-TestImages`)
+    non è detto che esista: deve avere un generatore nel repo (`kindle/make_test_images.py`).
+24. **Con Docker/WSL attivi il "primo IPv4" non è la LAN.** `Get-NetIPAddress` elenca per primo
+    l'adattatore virtuale (`192.168.208.1`, senza gateway) e `deploy.ps1` ci ha scritto `HOST=` per
+    davvero: il Kindle non può raggiungerlo e `check` fallisce senza dire il perché. L'indirizzo
+    giusto è quello della scheda che regge la rotta di default
+    (`Get-NetRoute -DestinationPrefix 0.0.0.0/0` → `InterfaceIndex`). Regola generale: per indovinare
+    un IP si chiede alla rotta, non all'elenco delle interfacce.
+25. **Il BusyBox del K4 è 1.7.2 e non ha `command -v`, `grep -E`, `wget -T`.** Lo ha rivelato
+    `inventory`: `comandi:` tutto `ASSENTE` pur essendo i binari presenti, `grep: invalid option --
+    'E'`, e `wget --help` elenca solo `-c -s -q -O --header -Y -P -U`. Gli script lato device usano
+    solo opzioni presenti in quel `--help`; il BusyBox 1.37 del container **non** è una prova di
+    compatibilità. Timeout senza `timeout`/`-T`: watchdog `( sleep 15; kill -9 $pid ) &`; per cercare
+    un eseguibile si scorre il `PATH` a mano; per più pattern `grep -e … -e …`.
+26. **Il risveglio RTC del K4 passa da `rtc1`, non da `powerd`.** `powerd` non ha proprietà RTC: nove
+    nomi (`rtcWakeup`, `rtcWakeUp`, `wakeupTime`, `alarmTime`, `rtcAlarm`, `wakeupTimer`,
+    `rtcWakeupTime`, `rtcTimer`, `wakeupTimeSec`) rifiutati con e senza `-i`. `rtc0` (`mxc_rtc`) non
+    espone `wakealarm`; `rtc1` (`pmic_rtc`) sì, ma **conta dall'accensione** (`since_epoch`): si
+    scrive `since_epoch + N`, non un epoch Unix. La **rilettura di `wakealarm` è vuota** (il driver
+    non la supporta) e non significa che l'allarme non sia armato: la prova è sospendere
+    (`echo mem > /sys/power/state`) e vedere se si risveglia — verificato 61 s con uptime continuo.
+    Attenzione a `powerd_test`: **`-h` non è help**, simula «power button held» e spegne lo schermo;
+    per lo stato si usa `-s`. `powerd` entra da solo in standby dopo ~600 s di inattività.
+27. **Una graffa dimenticata nello script del device non produce errori visibili.** `sh` esce con
+    «syntax error: unexpected end of file» prima di scrivere nel log, KUAL torna al menu e sembra che
+    il comando non faccia nulla: è costato un pomeriggio di test inutili (KUAL «non esegue», «cache»,
+    «permessi»). Due difese: `tests/test_kindle_scripts.py::test_function_braces_are_balanced` e
+    `sh -n` sul file **renderizzato** in container prima di ogni deploy (`docker run --rm -v
+    …:/w:ro nginx:alpine sh -n /w/render-check.sh`). Il gate pytest da solo non vede la sintassi sh.
+28. **Un ciclo «verde» può non aver aggiornato niente.** Il 2026-11-25 quattro `cycle 20` sono arrivati
+    in fondo con «raggiunto il limite di 20 giri» avendo avuto **venti `download fallito`** a testa: la
+    sospensione RTC era provata, il pannello no (e la cadenza era di 30 s perché anche `/next` taceva).
+    Prima di dichiarare riuscito un ciclo si **contano i download riusciti** nel log, non si guarda
+    l'exit code del ciclo. Nel codice: il ciclo conta i fallimenti e allunga l'attesa (300 → 600 → 1200
+    → 1800 s), e il ripiego di `/next` è `[panel] refresh_seconds` (90 s), non `LOOP_SECONDS`.
+29. **L'indirizzo del device è configurazione, non un IP da ricordare.** `HOST=` nel file generato è
+    cotto: con `192.168.1.14` (il PC di sviluppo, dove non ascolta nessuno) invece di `192.168.1.187`
+    (il server che fa girare il pannello) il device ha passato giorni su un'immagine vecchia, e il log
+    diceva solo `download fallito`. Ora `[server] device_host` è la fonte
+    (letta da `deploy.ps1` insieme a `port` e `[panel] refresh_seconds`), `-HostAddress` la vince, e il
+    deploy prova `http://<host>:<porta>/health` prima di scrivere: l'avviso si vede anche in `-DryRun`,
+    che è la domanda che conta. Resta vera la lezione 24: per indovinare un IP si chiede alla rotta, e
+    per non farlo cambiare si prenota nel router.
+30. **Un carattere «tipografico» dentro un `.ps1` rompe il parsing.** PowerShell 5.1 legge gli script
+    senza BOM come ANSI: una em dash UTF-8 (`—`, byte `E2 80 94`) diventa `â€”`, e l'ultimo byte è
+    U+201D, che il parser tratta come **virgoletta**. Il file smette di compilare con un errore che
+    punta decine di righe più in basso (`Carattere di terminazione mancante nella stringa`) e sembra un
+    problema di graffe. Negli script PowerShell: solo `-` e apostrofi dritti; se il parser accusa una
+    riga innocente, cercare i caratteri non-ASCII **prima** di sospettare le graffe. Corollario:
+    `"$name:"` va scritto `"${name}:"`, altrimenti è letto come variabile con drive (`$name:`).
 
 ## §Workflow
 

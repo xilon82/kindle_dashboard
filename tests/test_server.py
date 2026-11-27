@@ -12,7 +12,7 @@ from PIL import Image
 
 from kindle_dashboard import server
 from kindle_dashboard.cache import Cache
-from kindle_dashboard.config import Config, ServerConfig
+from kindle_dashboard.config import Config, PanelConfig, ServerConfig
 from kindle_dashboard.model import PanelData
 from kindle_dashboard.timezone_utils import zone
 
@@ -25,12 +25,14 @@ class FakeService:
 
     refresh_seconds = 300
 
-    def png(self) -> bytes:
+    def png(self, height: int | None = None) -> bytes:
         return FAKE_PNG
 
 
-def start(tmp_path, monkeypatch) -> tuple[server.ThreadingHTTPServer, threading.Thread]:
-    monkeypatch.setattr(server, "PanelService", FakeService)
+def start(
+    tmp_path, monkeypatch, service_cls: type = FakeService
+) -> tuple[server.ThreadingHTTPServer, threading.Thread]:
+    monkeypatch.setattr(server, "PanelService", service_cls)
     config = Config(server=ServerConfig(host="127.0.0.1", port=0), cache_dir=tmp_path)
     httpd = server.build_server(config, Cache(tmp_path))
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -51,6 +53,21 @@ def test_health_and_panel_endpoints(tmp_path, monkeypatch):
             assert response.headers["Content-Type"] == "image/png"
             assert response.headers["Cache-Control"] == "no-store"
             assert response.read() == FAKE_PNG
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
+
+
+def test_next_endpoint_returns_the_refresh_seconds(tmp_path, monkeypatch):
+    """Il client nativo usa `/next` come durata della sospensione tra due disegni."""
+    httpd, thread = start(tmp_path, monkeypatch)
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        with urllib.request.urlopen(f"{base}/next", timeout=5) as response:
+            assert response.status == 200
+            assert response.headers["Content-Type"] == "text/plain; charset=utf-8"
+            assert response.read() == b"300\n"
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -109,6 +126,68 @@ def test_panel_service_guards_against_duplicate_requests(tmp_path, monkeypatch):
     service._collected_at -= 10  # oltre la guardia: si raccoglie di nuovo
     service.png()
     assert calls["count"] == 2
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("", None),
+        ("t=1", None),
+        ("h=800", 800),
+        ("t=1&h=801", 801),
+        ("h=abc", None),
+        ("h=100", None),
+        ("h=2000", None),
+    ],
+)
+def test_requested_height_validates_the_query(query, expected):
+    assert server.requested_height(query) == expected
+
+
+def test_panel_png_passes_the_requested_height(tmp_path, monkeypatch):
+    heights: list[int | None] = []
+
+    class RecordingService(FakeService):
+        def png(self, height: int | None = None) -> bytes:
+            heights.append(height)
+            return FAKE_PNG
+
+    httpd, thread = start(tmp_path, monkeypatch, RecordingService)
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        with urllib.request.urlopen(f"{base}/panel.png?t=1&h=800", timeout=5) as response:
+            assert response.read() == FAKE_PNG
+        with urllib.request.urlopen(f"{base}/panel.png?h=nope", timeout=5) as response:
+            assert response.read() == FAKE_PNG
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
+    assert heights == [800, None]
+
+
+def test_panel_service_renders_the_requested_height(tmp_path, monkeypatch):
+    sizes: list[tuple[int, int]] = []
+
+    def fake_render(data, size, **kwargs):
+        sizes.append(size)
+        return Image.new("L", size)
+
+    def fake_collect(config, cache):
+        return PanelData(generated_at=datetime.now(zone("Europe/Rome")), timezone="Europe/Rome")
+
+    monkeypatch.setattr(server, "collect", fake_collect)
+    monkeypatch.setattr(server, "render_panel", fake_render)
+    config = Config(
+        panel=PanelConfig(width=600, height=720),
+        server=ServerConfig(host="127.0.0.1", port=0),
+        cache_dir=tmp_path,
+    )
+    service = server.PanelService(config, Cache(tmp_path))
+
+    service.png()
+    service.png(800)
+    assert sizes == [(600, 720), (600, 800)]
 
 
 def test_unknown_path_returns_404(tmp_path, monkeypatch):

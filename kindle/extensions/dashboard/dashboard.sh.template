@@ -1,42 +1,99 @@
 #!/bin/sh
-# Diagnostica per il pannello: verifica che il Kindle raggiunga il server e raccoglie informazioni.
+# Diagnostica, disegno e ciclo autonomo per il pannello su un Kindle 4.
 #
-# Il pannello NON viene disegnato da qui: su questo firmware (FW 5.x, Kindle 4) ne' eips ne' il fbink
-# incluso in KOReader mostrano PNG, e fermare il framework per fargli spazio ha prodotto schermo
-# bianco e riavvii. Il pannello si guarda nel browser: http://HOST:PORT/panel.html
+# Estensione KUAL del pannello: verifica il server, disegna il PNG con eips e pilota il ciclo
+# autonomo (download -> disegno -> sospensione RTC). Il fbink incluso in KOReader non serve: e'
+# compilato MINIMAL e non ha il supporto immagini. Fermare il framework porta schermo bianco e
+# riavvii, quindi il framework resta sempre avviato.
 #
-# File generato da deploy.ps1: i valori HOST e PORT arrivano da config.toml.
+# Le voci Wi-Fi e RTC cambiano lo stato del device, e solo quando li si sceglie dal menu: la
+# sospensione, manuale o dentro `cycle`, arma prima l'allarme RTC, e se la scrittura fallisce non
+# addormenta nulla. Il canale di recupero e' USB + `dashboard.log`: con la radio spenta SSH non
+# risponde.
+#
+# File generato da deploy.ps1: HOST, PORT e REFRESH_SECONDS arrivano da config.toml ([server] e
+# [panel] refresh_seconds). L'indirizzo del server non si scrive a mano qui: e' l'unico valore che,
+# sbagliato, lascia il device a scaricare nulla per giorni dicendo solo `download fallito`.
 
 HOST="__HOST__"
 PORT="__PORT__"
+# Cadenza diurna del pannello: il ciclo la usa quando `/next` non risponde.
+REFRESH_SECONDS="__REFRESH__"
 
 WORK_DIR="/mnt/us/dashboard"
 LOG="$WORK_DIR/dashboard.log"
+# Ciclo in background: il pid serve per non avviarne due (regola del pid orfano) e il file STOP per
+# fermarlo senza kill a mano. Il framework ridisegna quando KUAL esce, quindi il pannello va ripreso.
+PID_FILE="$WORK_DIR/dashboard.pid"
+STOP_FILE="$WORK_DIR/STOP"
+# 30 s: abbastanza per fermare il ciclo fra due disegni, abbastanza rado da non martellare le fonti.
+LOOP_SECONDS=30
+# Server irraggiungibile: dopo tre giri falliti l'attesa raddoppia (300 -> 600 -> 1200 -> 1800). Senza
+# questo, un server spento di notte tiene il device sveglio ogni 90 s per ore: e' successo davvero,
+# venti giri con venti `download fallito` e nessuna immagine nuova a schermo.
+FAILS_BEFORE_BACKOFF=3
+BACKOFF_START=300
+BACKOFF_MAX=1800
+# Il framebuffer e' 600x800, mentre la tela servita al browser e' 600x720 (barra degli indirizzi):
+# il client nativo chiede l'altezza piena, altrimenti gli ultimi 80 px restano quelli di KUAL.
+NATIVE_HEIGHT=800
 
 # KUAL lancia gli script con un PATH minimo: senza questo, "wget" puo' sembrare assente.
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
+# BusyBox 1.7.2 del Kindle non ha `command -v`: si cerca direttamente nel PATH, senza dipendere da
+# applet che questa build potrebbe non avere.
 find_cmd() {
     for candidate in "$@"; do
-        if command -v "$candidate" >/dev/null 2>&1; then
-            command -v "$candidate"
-            return 0
-        fi
-        if [ -x "$candidate" ]; then
-            echo "$candidate"
-            return 0
-        fi
+        case "$candidate" in
+            */*)
+                if [ -x "$candidate" ]; then
+                    echo "$candidate"
+                    return 0
+                fi
+                ;;
+            *)
+                old_ifs="$IFS"
+                IFS=:
+                for dir in $PATH; do
+                    if [ -x "$dir/$candidate" ]; then
+                        echo "$dir/$candidate"
+                        IFS="$old_ifs"
+                        return 0
+                    fi
+                done
+                IFS="$old_ifs"
+                ;;
+        esac
     done
     return 1
 }
 
 WGET="$(find_cmd wget /usr/bin/wget /bin/wget)"
 EIPS="$(find_cmd eips /usr/bin/eips /usr/sbin/eips)"
+# Il fbink di KOReader e' compilato MINIMAL (senza supporto immagini) ma resta l'unico presente sul
+# device: cercarlo serve a documentare *quale* build si sta provando, non a usarlo.
+FBINK="$(find_cmd fbink /mnt/us/koreader/fbink /usr/bin/fbink)"
+
+# URL per il client nativo: `h` chiede la tela 600x800, quella del framebuffer, invece dei 600x720
+# pensati per il browser. Il timestamp evita di ridisegnare un file gia' visto.
+panel_url() {
+    printf 'http://%s:%s/panel.png?t=%s&h=%s' "$HOST" "$PORT" "$(date +%s)" "$NATIVE_HEIGHT"
+}
 
 mkdir -p "$WORK_DIR"
 
 log() {
     echo "$(date '+%Y-%m-%dT%H:%M:%S') $*" >>"$LOG"
+}
+
+# Il log cresce a ogni voce e vive sulla partizione utente da 4 GB: oltre 2000 righe si tiene la
+# coda, altrimenti dopo mesi ogni voce di menu diventa lenta a scrivere.
+trim_log() {
+    [ -f "$LOG" ] || return 0
+    if [ "$(wc -l <"$LOG")" -gt 2000 ]; then
+        tail -n 1000 "$LOG" >"$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+    fi
 }
 
 battery_capacity() {
@@ -49,20 +106,122 @@ battery_capacity() {
     return 1
 }
 
+# Percentuale di batteria con due strade: `capacity` da sysfs e, se manca, `powerd_test -s`, che
+# sul K4 stampa la batteria. Serve al test di autonomia (20 giri): senza ripiego l'inventario
+# direbbe "vuoto" proprio prima e dopo la misura che deve confrontare. `sed` e' in `which_list`
+# perche' anche la sua assenza va vista nello stesso inventario, non scoperta dopo.
+battery_percent() {
+    local capacity percent
+    capacity="$(battery_capacity 2>/dev/null)"
+    case "$capacity" in
+        '' | *[!0-9]*)
+            ;;
+        *)
+            printf '%s' "$capacity"
+            return 0
+            ;;
+    esac
+    percent="$(powerd_test -s 2>/dev/null | sed -n 's/.*[^0-9]\([0-9][0-9]*\)%.*/\1/p' | head -n 1)"
+    case "$percent" in
+        '' | *[!0-9]*)
+            return 1
+            ;;
+        *)
+            printf '%s' "$percent"
+            return 0
+            ;;
+    esac
+}
+
+# Scarica un URL in un file. BusyBox 1.7.2 non ha `wget -T`: il timeout si ottiene con un watchdog
+# in background, altrimenti un server che non risponde lascia la voce di menu appesa per sempre.
+fetch_url() {
+    "$WGET" -q -O "$2" "$1" &
+    fetch_pid=$!
+    ( sleep 15; kill -9 "$fetch_pid" 2>/dev/null ) &
+    watchdog_pid=$!
+    wait "$fetch_pid"
+    fetch_rc=$?
+    kill "$watchdog_pid" 2>/dev/null
+    return "$fetch_rc"
+}
+
+# Firma PNG senza dipendere dal `grep` sui file binari: BusyBox 1.37 (nel container) restituisce 1
+# su un PNG valido, BusyBox 1.7.2 (sul Kindle) lo accetta. Si confrontano i primi 4 byte, con un
+# ripiego sul testo "PNG" a partire dal secondo byte.
+is_png() {
+    magic="$(head -c 4 "$1" 2>/dev/null)"
+    if [ -n "$magic" ]; then
+        [ "$magic" = "$(printf '\211PNG')" ]
+        return $?
+    fi
+    if [ "$(tail -c +2 "$1" 2>/dev/null | head -c 3)" = "PNG" ]; then
+        return 0
+    fi
+    grep -q PNG "$1"
+}
+
+# Il pannello si scarica in un file temporaneo e sostituisce quello buono solo se è davvero un PNG:
+# un errore HTML o un file troncato non devono cancellare l'ultima immagine valida.
+update_panel() {
+    tmp="$WORK_DIR/panel.new"
+    if ! fetch_url "$(panel_url)" "$tmp"; then
+        rm -f "$tmp"
+        log "panel: download fallito (tengo l'ultimo panel.png)"
+        return 1
+    fi
+    size=$(wc -c <"$tmp")
+    if [ "$size" -lt 1000 ] || ! is_png "$tmp"; then
+        rm -f "$tmp"
+        log "panel: download non PNG ($size byte, tengo l'ultimo panel.png)"
+        return 1
+    fi
+    mv "$tmp" "$WORK_DIR/panel.png"
+    log "panel: scaricato panel.png ($size byte)"
+    return 0
+}
+
+# Secondi al prossimo aggiornamento, decisi dal server (`/next`): la cadenza giorno/notte resta in
+# `schedule.py`. Se il server non risponde si usa il default del ciclo, senza perdere la sospensione.
+next_seconds() {
+    tmp="$WORK_DIR/next.txt"
+    if ! fetch_url "http://$HOST:$PORT/next" "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    value="$(cat "$tmp" 2>/dev/null)"
+    rm -f "$tmp"
+    case "$value" in
+        '' | *[!0-9]*)
+            return 1
+            ;;
+    esac
+    printf '%s' "$value"
+}
+
 check() {
     if [ -z "$WGET" ]; then
         log "check: wget non trovato"
         return 1
     fi
     tmp="$WORK_DIR/check.png"
-    if "$WGET" -q -O "$tmp" "http://$HOST:$PORT/panel.png?t=$(date +%s)"; then
-        log "check: OK http://$HOST:$PORT/panel.png ($(wc -c <"$tmp") byte)"
+    url="$(panel_url)"
+    if ! fetch_url "$url" "$tmp"; then
         rm -f "$tmp"
-        return 0
+        log "check: FALLITO $url (server spento, indirizzo cambiato o firewall)"
+        return 1
     fi
+    size=$(wc -c <"$tmp")
+    # Un HTTP 200 puo' contenere una pagina d'errore: senza questa prova il log direbbe "OK" anche
+    # quando il file scaricato non e' un'immagine.
+    if [ "$size" -lt 1000 ] || ! is_png "$tmp"; then
+        rm -f "$tmp"
+        log "check: risposta non PNG ($size byte) da $url"
+        return 1
+    fi
+    log "check: OK $url ($size byte)"
     rm -f "$tmp"
-    log "check: FALLITO http://$HOST:$PORT/panel.png (PC spento, IP cambiato o firewall)"
-    return 1
+    return 0
 }
 
 # Impedisce al Kindle di mostrare il salvascherino mentre il pannello e' aperto nel browser.
@@ -77,15 +236,413 @@ allow_sleep() {
     log "preventScreenSaver=0 -> ${out:-ok}"
 }
 
+# Una riga per comando, con l'exit code: il log si legge via USB e un output multi-riga lo
+# renderebbe illeggibile, mentre l'exit code e' l'unica cosa che distingue "ha funzionato" da
+# "ha risposto 0 senza fare nulla" (il caso di eips su questo firmware).
+report() {
+    label="$1"
+    shift
+    out="$("$@" 2>&1)"
+    rc=$?
+    [ -n "$out" ] || out="<vuoto>"
+    log "$label exit=$rc: $(printf '%s' "$out" | tr '\n' '|')"
+}
+
+which_list() {
+    found=""
+    for name in curl wget eips fbink file ip ifconfig rtcwake lipc-get-prop lipc-set-prop \
+        lipc-wait-event powerd_test openssl od tail tr grep sed; do
+        path="$(find_cmd "$name")"
+        if [ -n "$path" ]; then
+            found="$found $name=$path"
+        else
+            found="$found $name=ASSENTE"
+        fi
+    done
+    log "comandi:$found"
+}
+
+# Inventario in sola lettura: dice quali strumenti esistono su *questo* firmware invece di dedurlo
+# dal nome commerciale del Kindle. Nessun comando qui cambia stato.
+inventory() {
+    log "=== inventario ==="
+    report uname uname -a
+    report version sh -c "cat /etc/version 2>/dev/null || cat /etc/version.txt 2>/dev/null"
+    report cpu head -n 5 /proc/cpuinfo
+    report memoria head -n 3 /proc/meminfo
+    report disco sh -c "df -h | head -n 5"
+    # Batteria prima/dopo un ciclo lungo: e' l'unico modo per stimare l'autonomia.
+    report batteria battery_percent
+    which_list
+    report openssl openssl version
+    report wget_help sh -c "wget --help 2>&1 | head -n 5"
+    report rtc ls -l /sys/class/rtc
+    report power_state cat /sys/power/state
+    report processi sh -c "ps | grep -e powerd -e wifid -e framework -e cvm"
+    if [ -n "$EIPS" ]; then
+        report eips_info "$EIPS" -i
+        # `eips` senza argomenti stampa l'uso di *questa* versione: serve a non inventare opzioni.
+        report eips_help "$EIPS"
+    else
+        log "eips_info: eips ASSENTE"
+    fi
+    if [ -n "$FBINK" ]; then
+        report fbink_version "$FBINK" -v
+    else
+        log "fbink_version: fbink ASSENTE"
+    fi
+    report wifi_state lipc-get-prop com.lab126.wifid cmState
+    report screen_saver lipc-get-prop com.lab126.powerd preventScreenSaver
+    # Stato dei due RTC in sola lettura. `rtc0` e' `mxc_rtc`, `rtc1` e' `pmic_rtc` ed e' l'unico con
+    # `wakealarm`: la scrittura pero' non arma l'allarme (verificato: write_rc=0, rilettura vuota) e
+    # `powerd` non espone nessuna proprieta' RTC (9 nomi testati, tutti rifiutati).
+    rtc_info
+    report powerd_status sh -c "powerd_test -s 2>&1 | head -n 10"
+    report dmesg sh -c "dmesg 2>/dev/null | tail -n 15"
+    # Uso reale di powerd_test: e' il meccanismo nativo Lab126 e non va inventato. Senza argomenti
+    # stampa l'uso; `-h` NON e' help ma "simula power button held" (spegne lo schermo): si usa `s`,
+    # che stampa solo lo stato.
+    report powerd_usage sh -c "powerd_test 2>&1 | head -n 25"
+    # Il wake da RTC dipende dall'abilitazione del device: `enabled` qui, non l'allarme.
+    # Apici singoli: dentro i doppi `$r` verrebbe espanso dal chiamante (e arriverebbe vuoto).
+    report rtc_wakeup sh -c 'for r in /sys/class/rtc/rtc0 /sys/class/rtc/rtc1; do printf "%s " "$r"; cat "$r/device/power/wakeup" 2>/dev/null || echo assente; done'
+}
+
+# Disegna le varianti di formato con eips, una per volta. Non ferma il framework e non spegne
+# nulla: se eips non disegna, lo schermo resta quello di prima. Le varianti arrivano da
+# deploy.ps1 -TestImages e si rigenerano con `python kindle\make_test_images.py`.
+images() {
+    if [ -z "$EIPS" ]; then
+        log "images: eips ASSENTE"
+        return 1
+    fi
+    log "=== immagini ==="
+    found=0
+    for file in "$WORK_DIR"/test/*; do
+        [ -f "$file" ] || continue
+        found=1
+        # -c pulisce lo schermo: senza, un'immagine vecchia puo' sembrare quella nuova.
+        "$EIPS" -c >/dev/null 2>&1
+        out="$("$EIPS" -f -g "$file" 2>&1)"
+        rc=$?
+        log "immagine $(basename "$file") exit=$rc ${out:+-> $out}"
+        sleep 3
+    done
+    if [ "$found" -eq 0 ]; then
+        log "images: nessun file in $WORK_DIR/test (deploy.ps1 -TestImages)"
+    fi
+    log "=== fine immagini ==="
+}
+
+# Mostra un file gia' presente sul device: separa il problema del download da quello del rendering.
+show() {
+    file="${1:-$WORK_DIR/panel.png}"
+    if [ -z "$EIPS" ]; then
+        log "show: eips ASSENTE"
+        return 1
+    fi
+    if [ ! -f "$file" ]; then
+        log "show: file assente $file"
+        return 1
+    fi
+    out="$("$EIPS" -f -g "$file" 2>&1)"
+    rc=$?
+    log "show $(basename "$file") exit=$rc ${out:+-> $out}"
+}
+
+# Il framework ridisegna quando KUAL esce, quindi un'immagine disegnata una volta sparisce. Un ciclo
+# in background la riprende al giro successivo; non tocca Wi-Fi, sospensione o framework.
+loop_running() {
+    [ -f "$PID_FILE" ] || return 1
+    loop_pid="$(cat "$PID_FILE" 2>/dev/null)"
+    [ -n "$loop_pid" ] || return 1
+    kill -0 "$loop_pid" 2>/dev/null
+}
+
+# Disegna il pannello gia' scaricato (senza rete: serve anche al warm-up).
+draw_panel() {
+    "$EIPS" -f -g "$WORK_DIR/panel.png" >/dev/null 2>&1
+}
+
+start_loop() {
+    if [ -z "$EIPS" ]; then
+        log "loop: eips ASSENTE"
+        return 1
+    fi
+    if loop_running; then
+        log "loop: gia' in esecuzione (pid $(cat "$PID_FILE"))"
+        return 0
+    fi
+    rm -f "$STOP_FILE"
+    log "loop: avvio ogni $LOOP_SECONDS s"
+    (
+        # Il trap pulisce il pid anche quando lo stop uccide il processo durante il sleep.
+        trap 'rm -f "$PID_FILE"' 0
+        # Dopo l'uscita di KUAL il framework ridisegna la home (prima il menu, poi la minibar con
+        # Wi-Fi e batteria): i primi secondi servono refresh ravvicinati, altrimenti l'immagine resta
+        # coperta per uno o due giri. Lo stop uccide comunque il processo subito.
+        update_panel
+        for _ in 1 2 3; do
+            draw_panel
+            log "loop: disegnato panel.png (warm-up)"
+            sleep 5
+        done
+        while [ ! -f "$STOP_FILE" ]; do
+            update_panel
+            draw_panel
+            log "loop: disegnato panel.png"
+            sleep "$LOOP_SECONDS"
+        done
+        log "loop: terminato"
+    ) &
+    echo $! >"$PID_FILE"
+}
+
+stop_loop() {
+    if loop_running; then
+        loop_pid="$(cat "$PID_FILE")"
+        touch "$STOP_FILE"
+        # `kill` chiude subito, senza aspettare la fine del sleep: altrimenti il pannello ricopre KUAL
+        # per altri 15 s e fermare il ciclo diventa una corsa.
+        kill "$loop_pid" 2>/dev/null
+        # Il trap non scatta sul `kill` in ash: il pid va rimosso qui, altrimenti resta orfano e un
+        # pid riusato da un altro processo farebbe credere al ciclo ancora attivo.
+        rm -f "$PID_FILE"
+        log "loop: fermato (pid $loop_pid)"
+    else
+        rm -f "$PID_FILE"
+        log "loop: non in esecuzione"
+    fi
+}
+
+# Ciclo autonomo: disegna, chiede al server la cadenza (`/next`), sospende il device con l'RTC e al
+# risveglio aggiorna. Lo stop e' lo stesso di `stop` (file STOP + kill): il kill arriva prima che il
+# device si addormenti, quindi non resta sospeso con l'aggiornamento gia' programmato.
+start_cycle() {
+    # Primo argomento: numero massimo di giri (0 o assente = infinito). Con un limite il test si ferma
+    # da solo: fra due sospensioni la finestra per premere "Ferma ciclo" e' di pochi secondi.
+    max_rounds="${1:-0}"
+    case "$max_rounds" in
+        '' | *[!0-9]*)
+            max_rounds=0
+            ;;
+    esac
+    if [ -z "$EIPS" ]; then
+        log "cycle: eips ASSENTE"
+        return 1
+    fi
+    if loop_running; then
+        log "cycle: gia' in esecuzione (pid $(cat "$PID_FILE"))"
+        return 0
+    fi
+    rm -f "$STOP_FILE"
+    log "cycle: avvio (giri=$max_rounds, 0=infinito)"
+    (
+        trap 'rm -f "$PID_FILE"' 0
+        # Il primo download vale come gli altri: se il server e' gia' giu' non serve aspettare tre
+        # giri per accorgersene.
+        if update_panel; then
+            fails=0
+        else
+            fails=1
+        fi
+        backoff=$BACKOFF_START
+        for _ in 1 2 3; do
+            draw_panel
+            log "cycle: disegnato (warm-up)"
+            sleep 5
+        done
+        rounds=0
+        while [ ! -f "$STOP_FILE" ]; do
+            # La cadenza la decide il server. Se `/next` tace si usa quella diurna di config.toml
+            # (90 s), non i 30 s del ciclo di ripiego: una sospensione corta non aiuta nessuno.
+            wait_s="$(next_seconds)" || wait_s="$REFRESH_SECONDS"
+            [ "$wait_s" -ge 5 ] 2>/dev/null || wait_s="$REFRESH_SECONDS"
+            if [ "$fails" -ge "$FAILS_BEFORE_BACKOFF" ]; then
+                wait_s="$backoff"
+                log "cycle: $fails download falliti, sospensione $wait_s s (tetto $BACKOFF_MAX)"
+                if [ "$backoff" -lt "$BACKOFF_MAX" ]; then
+                    backoff=$((backoff * 2))
+                    [ "$backoff" -gt "$BACKOFF_MAX" ] && backoff=$BACKOFF_MAX
+                fi
+            fi
+            log "cycle: sospensione $wait_s s"
+            if ! suspend_rtc "$wait_s"; then
+                log "cycle: sospensione non riuscita, attendo con sleep"
+                sleep "$wait_s"
+            fi
+            [ -f "$STOP_FILE" ] && break
+            if update_panel; then
+                fails=0
+                backoff=$BACKOFF_START
+            else
+                fails=$((fails + 1))
+            fi
+            draw_panel
+            rounds=$((rounds + 1))
+            log "cycle: aggiornato (giro $rounds)"
+            if [ "$max_rounds" -gt 0 ] && [ "$rounds" -ge "$max_rounds" ]; then
+                log "cycle: raggiunto il limite di $max_rounds giri"
+                break
+            fi
+        done
+        log "cycle: terminato"
+    ) &
+    echo $! >"$PID_FILE"
+}
+
+# Legge lo stato del Wi-Fi (CONNECTED, DISCONNECTED, etc.).
+wifi_state() {
+    lipc-get-prop com.lab126.wifid cmState 2>/dev/null | tr -d '\r\n'
+}
+
+# Spegne la radio Wi-Fi.
+wifi_off() {
+    if ! lipc-set-prop com.lab126.cmd wirelessEnable 0 2>&1; then
+        log "wifi_off: fallito"
+        return 1
+    fi
+    log "wifi_off: richiesto"
+    return 0
+}
+
+# Riaccende la radio Wi-Fi e aspetta CONNECTED (timeout 60 s).
+wifi_on() {
+    if ! lipc-set-prop com.lab126.cmd wirelessEnable 1 2>&1; then
+        log "wifi_on: fallito"
+        return 1
+    fi
+    log "wifi_on: richiesto, attesa CONNECTED..."
+    local timeout=60
+    while [ $timeout -gt 0 ]; do
+        state=$(wifi_state)
+        if [ "$state" = "CONNECTED" ]; then
+            log "wifi_on: CONNECTED (dopo $((60 - timeout)) s)"
+            return 0
+        fi
+        sleep 2
+        timeout=$((timeout - 2))
+    done
+    log "wifi_on: timeout, stato=$state"
+    return 1
+}
+
+# Esegue un ciclo completo off -> on misurando il tempo.
+wifi_cycle() {
+    log "wifi_cycle: inizio"
+    local start=$(date +%s)
+    wifi_off || return 1
+    sleep 3
+    wifi_on || return 1
+    local end=$(date +%s)
+    log "wifi_cycle: completato in $((end - start)) s"
+    return 0
+}
+
+# RTC del device, in sola lettura. Sul Kindle 4 `rtc1` e' `pmic_rtc` ed e' l'unico con `wakealarm`:
+# `rtc0` (`mxc_rtc`) non lo espone, e `powerd` non ha nessuna proprieta' RTC (tutte rifiutate).
+RTC_DIR="/sys/class/rtc/rtc1"
+RTC_WAKEALARM="$RTC_DIR/wakealarm"
+
+rtc_info() {
+    for rtc in /sys/class/rtc/rtc0 /sys/class/rtc/rtc1; do
+        name="$(cat "$rtc/name" 2>/dev/null)"
+        since="$(cat "$rtc/since_epoch" 2>/dev/null)"
+        alarm="$(cat "$rtc/wakealarm" 2>/dev/null)"
+        log "rtc_info: $rtc name=$name since_epoch=$since wakealarm=${alarm:-vuoto}"
+    done
+}
+
+# Arma l'allarme e rilegge, **senza** sospendere: prova che il driver accetta il valore nel suo
+# tempo. Se non e' sospeso, un allarme che scade non fa nulla.
+rtc_arm() {
+    seconds=${1:-120}
+    base="$(cat "$RTC_DIR/since_epoch" 2>/dev/null)"
+    wake_ts=$((base + seconds))
+    echo 0 >"$RTC_WAKEALARM" 2>/tmp/rtc_err
+    err_disarm="$(cat /tmp/rtc_err 2>/dev/null)"
+    if echo "$wake_ts" >"$RTC_WAKEALARM" 2>/tmp/rtc_err; then
+        rc=0
+    else
+        rc=$?
+    fi
+    err="$(cat /tmp/rtc_err 2>/dev/null)"
+    armed="$(cat "$RTC_WAKEALARM" 2>/dev/null)"
+    log "rtc_arm: base=$base wake_ts=$wake_ts write_rc=$rc err=${err:-nessuno} disarm_err=${err_disarm:-nessuno} riletto=${armed:-vuoto}"
+    rm -f /tmp/rtc_err
+}
+
+# Programma il risveglio e sospende. Il timestamp va scritto in `rtc1/wakealarm` **nel tempo di
+# quel RTC**, non in epoch Unix: `rtc1` (`pmic_rtc`) ha `since_epoch=2498`, cioe' conta
+# dall'accensione, quindi un epoch Unix viene scartato dal driver (rilettura vuota). Si parte da
+# `since_epoch` e si aggiungono i secondi. Senza `powerd` l'ingresso in standby si chiede al kernel.
+# Al risveglio lo script riprende e lo registra: e' la prova che la ripresa funziona.
+suspend_rtc() {
+    seconds=${1:-60}
+    if [ ! -f "$RTC_WAKEALARM" ]; then
+        log "suspend_rtc: $RTC_WAKEALARM assente"
+        return 1
+    fi
+    base="$(cat "$RTC_DIR/since_epoch" 2>/dev/null)"
+    case "$base" in
+        '' | *[!0-9]*)
+            log "suspend_rtc: since_epoch non leggibile ($base)"
+            return 1
+            ;;
+    esac
+    wake_ts=$((base + seconds))
+    # `0` disarma un allarme eventualmente rimasto da un test precedente.
+    echo 0 >"$RTC_WAKEALARM" 2>/dev/null
+    if ! echo "$wake_ts" >"$RTC_WAKEALARM" 2>&1; then
+        log "suspend_rtc: scrittura di $wake_ts in $RTC_WAKEALARM fallita"
+        return 1
+    fi
+    armed="$(cat "$RTC_WAKEALARM" 2>/dev/null)"
+    log "suspend_rtc: base=$base wakealarm=$wake_ts (tra $seconds s), riletto=${armed:-vuoto}"
+    if [ -z "$armed" ]; then
+        # `pmic_rtc` non supporta la rilettura: la scrittura non da errore ma `cat` torna vuoto.
+        # Si prova comunque, perche' e' l'unico modo di sapere se l'allarme e' stato armato.
+        log "suspend_rtc: rilettura non supportata dal driver, provo comunque la sospensione"
+    fi
+    log "suspend_rtc: sospensione..."
+    echo mem >/sys/power/state 2>&1
+    # Da qui si riprende solo dopo il risveglio: la riga seguente e' la prova della ripresa.
+    log "suspend_rtc: risvegliato, uptime=$(cat /proc/uptime 2>/dev/null)"
+    return 0
+}
+
+# Registra che il device è sveglio e lo stato del Wi-Fi. Non prova nulla sulla ripresa: quella
+# prova è l'uptime continuo che `suspend_rtc` scrive appena torna, non una proprietà di powerd.
+resume_check() {
+    log "resume_check: device risvegliato"
+    state=$(wifi_state)
+    log "resume_check: wifi_state=$state"
+    return 0
+}
+
+# Prova manuale in un comando solo: `suspend_rtc` arma l'allarme, sospende e **riprende** nello
+# stesso processo, quindi la riga "risvegliato" che scrive è la prova della ripresa. Il ciclo
+# autonomo (`cycle`) chiama `suspend_rtc` direttamente a ogni giro.
+rtc_suspend_cycle() {
+    local seconds=${1:-60}
+    log "rtc_cycle: programmazione risveglio tra $seconds secondi e sospensione"
+    suspend_rtc "$seconds" || return 1
+    return 0
+}
+
 diag() {
     log "=== diag ==="
     log "uname: $(uname -a 2>&1)"
-    log "wget: ${WGET:-ASSENTE} | eips: ${EIPS:-ASSENTE}"
-    log "batteria: $(battery_capacity 2>/dev/null || echo sconosciuta)%"
+    log "wget: ${WGET:-ASSENTE} | eips: ${EIPS:-ASSENTE} | fbink: ${FBINK:-ASSENTE}"
+    battery="$(battery_percent 2>/dev/null)"
+    log "batteria: ${battery:-sconosciuta}%"
     log "url pannello: http://$HOST:$PORT/panel.html"
+    log "url nativa: $(panel_url)"
     check
     log "=== fine diag ==="
 }
+
+trim_log
 
 case "$1" in
     check)
@@ -94,6 +651,48 @@ case "$1" in
     diag)
         diag
         ;;
+    inventory)
+        inventory
+        ;;
+    images)
+        images
+        ;;
+    show)
+        show "$2"
+        ;;
+    loop)
+        start_loop
+        ;;
+    stop)
+        stop_loop
+        ;;
+    cycle)
+        start_cycle "$2"
+        ;;
+    wifi_off)
+        wifi_off
+        ;;
+    wifi_on)
+        wifi_on
+        ;;
+    wifi_cycle)
+        wifi_cycle
+        ;;
+    rtc_info)
+        rtc_info
+        ;;
+    rtc_arm)
+        rtc_arm "${2:-120}"
+        ;;
+    suspend_rtc)
+        suspend_rtc "${2:-60}"
+        ;;
+    resume_check)
+        resume_check
+        ;;
+    rtc_cycle)
+        rtc_suspend_cycle "${2:-60}"
+        ;;
     awake)
         keep_awake
         ;;
@@ -101,7 +700,7 @@ case "$1" in
         allow_sleep
         ;;
     *)
-        echo "uso: $0 {check|diag|awake|sleep}"
+        echo "uso: $0 {check|diag|inventory|images|show [file]|loop|stop|cycle|wifi_off|wifi_on|wifi_cycle|rtc_info|rtc_arm|suspend_rtc|resume_check|rtc_cycle|awake|sleep}"
         exit 2
         ;;
 esac

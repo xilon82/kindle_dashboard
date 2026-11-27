@@ -94,6 +94,11 @@ font_bold = ""
 # `0.0.0.0` = raggiungibile dal Kindle sulla stessa rete. Il Kindle 4 ha solo Wi-Fi 2.4 GHz.
 host = "0.0.0.0"
 port = 8787
+# Indirizzo con cui il Kindle raggiunge il server: `deploy.ps1` lo scrive in `HOST=` sul device.
+# Vuoto = l'IP della scheda della rotta di default del PC. Vale la pena riempirlo con un IP
+# **riservato dal router**: con il DHCP l'indirizzo cambia e il pannello smette di aggiornarsi
+# dicendo solo `download fallito` nel log.
+device_host = ""
 
 [schedule]
 # Fascia notturna: ricarica più rada e `NOTTE` al posto dell'orario, che sarebbe vecchio fino a

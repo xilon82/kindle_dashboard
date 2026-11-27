@@ -1,8 +1,8 @@
 # Il virtual environment (venv): guida didattica
 
 > Cosa isola un `venv`, perché serve, come si crea, quali sono i suoi limiti.
-> In `kindle-dashboard` il venv è l'ambiente di **sviluppo e test**; il container
-> ([docs/docker.md](docker.md)) è l'ambiente di **deploy**.
+> In `kindle-dashboard` il **percorso principale è il container** ([docs/docker.md](docker.md)):
+> il venv resta l'ambiente di **sviluppo, gate e didattica**, non quello con cui il pannello gira.
 
 ## 1. Il problema: un solo `site-packages` per tutto il sistema
 
@@ -50,7 +50,7 @@ Dalla radice del repository:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e .
+python -m pip install -e ".[dev]"
 ```
 
 ```bash
@@ -58,13 +58,18 @@ python -m pip install -e .
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e .
+python -m pip install -e ".[dev]"
 ```
 
 - `.venv` è il nome convenzionale: lo riconoscono VS Code e la maggior parte dei tool, ed è già in
   `.gitignore`, quindi non finisce nel repository.
-- `pip install -e .` è un'installazione *editable*: i sorgenti restano dove sono e le modifiche sono
-  attive subito. Le dipendenze (`pillow`, `tzdata`) arrivano da `pyproject.toml`.
+- `pip install -e ".[dev]"` è un'installazione *editable*: i sorgenti restano dove sono e le modifiche
+  sono attive subito. Le dipendenze di runtime (`pillow`, `tzdata`) e quelle di sviluppo (`pytest`,
+  `ruff`, dall'extra `dev`) arrivano da `pyproject.toml`.
+- La prima installazione ha bisogno della **rete**: `pip` costruisce il pacchetto in un ambiente
+  isolato e scarica il backend dichiarato in `[build-system]` (`setuptools`), che da Python 3.12 non
+  fa più parte del venv. Con `--no-build-isolation` il venv deve avere `setuptools` già installato,
+  altrimenti si ottiene `ModuleNotFoundError: No module named 'setuptools'`.
 - Verifica: `python -c "import sys; print(sys.prefix)"` deve stampare il percorso di `.venv`; se
   stampa un percorso di sistema l'attivazione non ha funzionato.
 - Uscita: `deactivate`.
@@ -86,16 +91,17 @@ sbagliato e non te ne accorgi. Vale per tutti gli strumenti: `python -m ruff`, `
 
 ### Dipendenze di sviluppo
 
-`pyproject.toml` dichiara solo le dipendenze di runtime. Gli strumenti del gate (`pytest`, `ruff`)
-vanno installati **nel venv**, così non finiscono nell'ambiente globale:
+Le dipendenze di runtime (`pillow`, `tzdata`) e quelle di sviluppo stanno entrambe in
+`pyproject.toml`, ma in due posti distinti: le prime in `dependencies`, le seconde nell'extra `dev`
+(`pytest`, `ruff`). Installando l'extra gli strumenti del gate restano **nel venv** e non finiscono
+nell'ambiente globale:
 
 ```powershell
-python -m pip install pytest ruff
+python -m pip install -e ".[dev]"
 ```
 
-Se vuoi che siano dichiarati una volta per tutte, il posto naturale è un extra
-`[project.optional-dependencies] dev = [...]` in `pyproject.toml`: è una modifica da concordare,
-perché cambia il contratto di installazione del progetto.
+Chi deve solo eseguire il pannello può ometterlo (`pip install -e .`): in quel caso `python -m
+pytest` e `python -m ruff` non sono disponibili, cosa accettabile in un container di produzione.
 
 ## 4. Vantaggi e svantaggi
 
@@ -118,16 +124,14 @@ Un venv è monouso: se si corrompe, si butta. Dalla radice del repository:
 Remove-Item -Recurse -Force .venv    # distruttivo: cancella solo l'ambiente, non i sorgenti
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e .
-python -m pip install pytest ruff
+python -m pip install -e ".[dev]"
 ```
 
 ```bash
 rm -rf .venv
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e .
-python -m pip install pytest ruff
+python -m pip install -e ".[dev]"
 ```
 
 Nel `.venv` non c'è nulla di tuo: sorgenti, `config.toml` e `cache/` stanno fuori. La cancellazione
@@ -137,13 +141,15 @@ Nel `.venv` non c'è nulla di tuo: sorgenti, `config.toml` e `cache/` stanno fuo
 
 | Esigenza | Strumento | Comando |
 |---|---|---|
-| Scrivere codice, test, lint con feedback immediato | venv | `python -m ruff check .` / `python -m pytest -q` |
-| Anteprima del pannello | venv | `python -m kindle_dashboard render -o preview.png` |
+| Eseguire il pannello (uso normale) | container | `docker compose up -d` |
 | Server 24/7 su un dispositivo dedicato | container | `docker compose up -d` |
 | Verificare che giri identico su un'altra macchina | container | `docker compose build && docker compose up -d` |
+| Scrivere codice, test, lint con feedback immediato | venv | `python -m ruff check .` / `python -m pytest -q` |
+| Anteprima del pannello | venv | `python -m kindle_dashboard render -o preview.png` |
 
-Il venv è l'ambiente di sviluppo; il container è l'artefatto di deploy. Non sono alternativi: sono
-due livelli di isolamento diversi. Dettagli in [docs/docker.md](docker.md).
+Il **container è il percorso principale**: è così che il pannello gira. Il venv resta l'ambiente di
+sviluppo, il posto del gate e il percorso didattico di questa guida. Non sono alternativi: sono due
+livelli di isolamento diversi. Dettagli in [docs/docker.md](docker.md).
 
 ## 7. Il gate di qualità
 
