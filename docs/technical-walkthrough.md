@@ -58,10 +58,10 @@ Vincoli verificati che restano:
   8 bit del pannello è esattamente il formato giusto;
 - il `fbink` di KOReader resta senza supporto immagini (`Image=No`).
 
-Per questo il browser resta la visualizzazione predefinita finché non esiste un **ciclo nativo
-collaudato** (download → verifica del PNG → disegno → ripresa), non perché il framebuffer sia
-inutilizzabile. Il percorso e la matrice dei test sono in `docs/kindle4-investigation.md`; gli
-strumenti (`kindle/inspect_png.py`, `kindle/make_test_images.py`) e le voci KUAL `Inventario`,
+Il **ciclo nativo esiste ed è la visualizzazione predefinita**: download → verifica del PNG → `eips` →
+sospensione con allarme RTC → ripresa e aggiornamento; il browser resta il ripiego. Il percorso e la
+matrice dei test sono in `docs/kindle4-investigation.md` e `docs/kindle4-wifi-suspend-investigation.md`;
+gli strumenti (`kindle/inspect_png.py`, `kindle/make_test_images.py`) e le voci KUAL `Inventario`,
 `Test immagini (eips)`, `Mostra panel.png` servono a ripetere le prove **senza** fermare il framework
 e senza SSH.
 
@@ -647,8 +647,13 @@ l'intenzione era scrivere qualcosa che non ha effetto).
 3. **Fermare il framework** per liberare il framebuffer (`/etc/init.d/framework stop`): schermo bianco,
    **unità USB non più esposta** (è il framework a gestire la modalità archivio), riavvio del device.
 4. **Browser + pagina HTML**: funziona, e il device resta in uno stato normale.
+5. **`eips` con il framework avviato e un PNG `L` 8 bit**: disegna. Era il test di ottobre a essere
+   falsato (framework fermo **e** formati sbagliati insieme). Da lì `loop` (persistenza del disegno) e
+   `cycle` (sospensione RTC e ripresa).
 
-Da qui la decisione: il device è un **thin client HTTP**, l'estensione KUAL diventa **diagnostica**.
+Storia: per un periodo il device è stato un **thin client HTTP** e l'estensione KUAL è rimasta
+diagnostica. Oggi l'estensione è il percorso di visualizzazione — voce *Avvia pannello (ciclo RTC)* — e
+il browser è il ripiego.
 
 ### 8.2 Estensione KUAL (`kindle/extensions/dashboard/`)
 
@@ -660,14 +665,18 @@ Da qui la decisione: il device è un **thin client HTTP**, l'estensione KUAL div
 
   **Senza questo blocco KUAL non elenca l'estensione**, senza errori né voci grigie: la differenza
   rispetto all'estensione di KOReader (che funziona) era tutta lì.
-- `menu.json`: voci con `action` assoluto (`/mnt/us/extensions/dashboard/dashboard.sh`) e `params`.
-  Voci attuali: *Verifica server*, *Diagnostica*, *Tieni schermo acceso*, *Riattiva salvascherino*.
-- `dashboard.sh` (generato da `deploy.ps1` da un template): **non disegna niente**. Risolve i binari
-  con `command -v` (il `PATH` di KUAL è ridotto), scrive tutto in `/mnt/us/dashboard/dashboard.log`,
-  verifica la raggiungibilità del PC con `wget` e comanda `preventScreenSaver` via `lipc-set-prop`.
-- `deploy.ps1`: trova da solo l'unità del Kindle (quella con `documents\` e `system\`), legge la porta
-  da `config.toml` **tramite il pacchetto Python** (una sola fonte di verità) e scrive lo script in
-  **UTF-8 senza BOM con line ending LF** — `sh` non tollera `\r`.
+- `menu.json`: voci con `action` assoluto (`/mnt/us/extensions/dashboard/dashboard.sh`) e `params`;
+  l'ordine è il campo `priority`. Prime due: *Avvia pannello (ciclo RTC)* e *Ferma ciclo*; poi
+  diagnostica (*Verifica server*, *Diagnostica*, *Inventario*, *Mostra panel.png*, schermo accesso) e
+  infine i test (immagini, ciclo di ripiego, 3/20 giri, Wi-Fi, RTC).
+- `dashboard.sh` (generato da `deploy.ps1` da un template): risolve i binari **scorrendo il `PATH` a
+  mano** (BusyBox 1.7.2 non ha `command -v`), scarica con `wget` sotto watchdog (`wget -T` non esiste),
+  verifica la firma PNG, disegna con `eips`, sospende con `rtc1/wakealarm` + `/sys/power/state`, e
+  scrive tutto in `/mnt/us/dashboard/dashboard.log` con exit code e output sulla stessa riga.
+- `deploy.ps1`: trova da solo l'unità del Kindle (quella con `documents\` e `system\`), legge da
+  `config.toml` **tramite il pacchetto Python** (una sola fonte di verità) porta, `device_host` e
+  `refresh_seconds`, prova `http://<host>:<porta>/health` e scrive lo script in **UTF-8 senza BOM con
+  line ending LF** — `sh` non tollera `\r`.
 
 ### 8.3 Rete e firewall (la parte che fa perdere più tempo)
 
@@ -681,6 +690,27 @@ Da qui la decisione: il device è un **thin client HTTP**, l'estensione KUAL div
   Python: sono state disabilitate, lasciando la regola `kindle-dashboard 8787`.
 - I cmdlet PowerShell **non esistono in `cmd.exe`**: per questo le operazioni di setup sono script
   (`.ps1`) e non righe da incollare, che si incollano anche attaccate quando si perdono gli a capo.
+
+### 8.4 Il ciclo autonomo, e il deploy che dice la verità
+
+Il ciclo è la parte che sembrava a posto e non lo era. Cronologia delle prove:
+
+1. `cycle 3` (2026-11-15): tre sospensioni da 90 s, risvegli a 92/91/91 s, uptime continuo, download
+   riuscito 5 s dopo il risveglio. Il meccanismo funziona.
+2. `cycle 20` (2026-11-15, 21:34–22:12): venti giri completi con la stessa cadenza. Un tentativo con la
+   USB del PC collegata si è invece chiuso con un riavvio (`wdog: Abnormal reset detected`).
+3. `cycle 20` (2026-11-24/25): arrivano a «raggiunto il limite di 20 giri» con **venti `download
+   fallito`** e sospensioni da 30 s, perché il server all'indirizzo scritto in `HOST=` non rispondeva
+   (Docker Desktop spento, nessun `serve` in ascolto). La sospensione era provata; il pannello no.
+
+Le due lezioni sono finite nel codice, non solo nei documenti:
+
+- **l'indirizzo del device è configurazione** (`[server] device_host`) e il deploy lo prova prima di
+  scrivere, con `http://<host>:<porta>/health`. Un deploy "riuscito" verso un server spento produce un
+  device che non aggiorna nulla e non lo dice;
+- **il ciclo conta i fallimenti**: dopo tre, l'attesa raddoppia (300 → 600 → 1200 → 1800 s) invece di
+  svegliare il device ogni 90 s per ore. Quando `/next` tace il ripiego è `[panel] refresh_seconds`
+  (90 s), non i 30 s del ciclo senza sospensione.
 
 ---
 
@@ -700,7 +730,7 @@ I payload veri stanno in `tests/fixtures/` (`weather_openmeteo.json`, `marine_op
 |---|---|
 | `test_render.py` | dimensioni/mode, determinismo, sezioni vuote, troncamenti, priorità fermate, `NOTTE`, segmenti testo+icona, riga dei dettagli (ordine e cedimento), punti cardinali e nomi dei venti |
 | `test_schedule.py` | confini 22:59/23:00 e 06:29/06:30, mezzanotte, clamp, intervalli |
-| `test_config.py` | valori, errori parlanti, override da ambiente, `stop_details`, `[schedule]`, `[sea]`, chiave sconosciuta o nella sezione sbagliata, `config.example.toml` che si carica davvero, allineamento fra `_SECTION_KEYS` e dataclass |
+| `test_config.py` | valori, errori parlanti, override da ambiente, `stop_details`, `[schedule]`, `[sea]`, `[server] device_host` (vuoto, letto, rifiutato se ha schema o porta), chiave sconosciuta o nella sezione sbagliata, `config.example.toml` che si carica davvero, allineamento fra `_SECTION_KEYS` e dataclass |
 | `test_sea.py` | parsing Open-Meteo Marine, scala Douglas (forza e parola), campi mancanti, coordinate della richiesta |
 | `test_weather.py` | parsing Open-Meteo (nodi, direzione del vento, umidità), campi mancanti, codici WMO, unità e campi della richiesta |
 | `test_trains.py` | partenze passate, ritardo, binario, cancellazioni, filtro, fermate da `/trip` |
@@ -708,7 +738,7 @@ I payload veri stanno in `tests/fixtures/` (`weather_openmeteo.json`, `marine_op
 | `test_calendar.py` | `BYDAY`/`COUNT`, `EXDATE`, override `RECURRENCE-ID`, annullato, `TZID` sconosciuto, URL embed |
 | `test_waste.py` | ricorrenze e giorni della differenziata |
 | `test_server.py` | `/health`, `/panel.png`, `/panel.html`, 404, porta non rubabile, guardia anti-doppione |
-| `test_kindle_scripts.py` | `menu.json` allineato ai rami del `case`, azione deployata, template in LF |
+| `test_kindle_scripts.py` | `menu.json` allineato ai rami del `case`, azione deployata, template in LF, graffe bilanciate, un solo segnaposto per valore, `deploy.ps1` che rende `HOST`/`PORT`/`REFRESH_SECONDS` da config, opzioni assenti in BusyBox 1.7.2, ciclo nativo come prima voce, ripiego di cadenza e backoff |
 
 Il numero di test non è scritto qui apposta: cambia a ogni modifica e un conteggio fisso invecchia
 subito (era già successo). Il totale lo stampa `python -m pytest -q`.

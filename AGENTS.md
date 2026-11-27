@@ -116,6 +116,18 @@ config.toml -> collect() -> PanelData -> render_panel() -> PNG / HTTP
    stampava quadrati al posto delle accentate). `tests/test_fonts.py` tiene fermi l'esistenza e la
    licenza del file spedito, che `load()` usi quello e l'ordine dei ripieghi. Cambiare font cambia tutte
    le misure, quindi le regole di cedimento non vanno allentate «perché tanto il font è quello».
+13. **L'indirizzo con cui il device raggiunge il server è configurazione, non un IP incollato**: sta in
+   `[server] device_host` e `deploy.ps1` lo rende in `HOST=`. Il ripiego (IP della scheda della rotta di
+   default) esiste solo per il primo avvio, ed è pericoloso su una macchina che non è il server: il
+   pannello gira su `192.168.1.187`, il PC di sviluppo è `192.168.1.14`. Con `HOST=192.168.1.14` il
+   device ha passato giorni su un'immagine vecchia, e il log diceva soltanto `download fallito`.
+   `deploy.ps1` ora prova `http://<host>:<port>/health` prima di scrivere, anche in `-DryRun`.
+14. **Un ciclo "verde" può non aver aggiornato niente**: i venti giri del 2026-11-25 sono finiti con
+   «raggiunto il limite di 20 giri» avendo avuto **venti `download fallito`**, cioè con la sospensione
+   RTC provata e il pannello mai aggiornato (e cadenza di ripiego a 30 s perché anche `/next` taceva).
+   Prima di dichiarare riuscito un ciclo si contano i download riusciti nel log, e il ciclo ora conta i
+   fallimenti, allunga l'attesa (300 → 600 → 1200 → 1800 s) e usa `[panel] refresh_seconds` come
+   cadenza di ripiego invece di `LOOP_SECONDS`.
 
 ### Configurazione
 
@@ -237,27 +249,35 @@ Confermato su un Kindle 4 (`Linux kindle 2.6.31-rt11-lab126`, FBInk lo identific
 - **ciclo autonomo**: `cycle` disegna, chiede `/next` al server (cadenza giorno/notte), sospende con
   l'RTC e al risveglio riscarica. Lo stop è lo stesso di `loop` (file STOP + `kill`), quindi uccide
   il processo prima che si addormenti e non lascia il device sospeso. Verificato su 3 giri: risvegli
-  a 92/91/91 s, uptime continuo e **Wi-Fi ancora associato** (nessun `wifi_off` necessario). Un
-  `cycle 20` completo ha tenuto 20 giri (21:34–22:12, risvegli ~91 s, uptime continuo); un secondo
-  tentativo si è invece **interrotto al giro 14 con un riavvio** (`dmesg`: `wdog: Abnormal reset
-  detected`, `rtc1 since_epoch` ripartito) con il Kindle attaccato alla USB del PC. I test dei cicli
-  vanno fatti con il caricatore e la USB staccata, leggendo il log solo alla fine.
+  a 92/91/91 s, uptime continuo e **Wi-Fi ancora associato** (nessun `wifi_off` necessario). Due
+  `cycle 20` completi il 2026-11-15 (15:27–16:05 e 21:34–22:12) con risvegli ~91 s e uptime continuo;
+  un terzo tentativo si è invece **interrotto al giro 14 con un riavvio** (`dmesg`: `wdog: Abnormal
+  reset detected`, `rtc1 since_epoch` ripartito) con il Kindle attaccato alla USB del PC. I test dei
+  cicli vanno fatti con il caricatore e la USB staccata, leggendo il log solo alla fine.
+- **venti giri non bastano se il device non chiama il server giusto**: i run del 2026-11-24/25 sono
+  arrivati in fondo (`cycle: raggiunto il limite di 20 giri`) con **venti `download fallito`** e
+  `sospensione 30 s` perché `HOST=` puntava al PC di sviluppo invece che al server (e anche `/next`
+  taceva): hanno provato la sospensione, non il pannello. Da lì il conteggio dei fallimenti nel ciclo e
+  il backoff fino a 1800 s.
 
-Conseguenza di progetto: **il browser resta la visualizzazione predefinita** (`/panel.html` con meta
-refresh) finché il ciclo nativo non ha una misura di autonomia; l'estensione KUAL ha voci diagnostiche
-(`Verifica server`, `Diagnostica`, `Inventario`, `Test immagini (eips)`, `Mostra panel.png`) e quelle
-di disegno usano `eips` con immagini **8 bit**, senza fermare il framework. Le voci Wi-Fi e RTC
-cambiano lo stato del device, e solo su scelta esplicita dal menu; anche `cycle` sospende a ogni giro,
-con lo stesso allarme armato prima di addormentare, quindi una scrittura fallita non lascia il device
-in standby. Il recupero è USB + `dashboard.log`. Il disegno nativo **non è più «impossibile»**: le
-prove sono `images` (formati), `loop` (persistenza) e `cycle` (download + disegno + ripresa RTC, 3
-giri verificati); per promuoverlo a default servono i 20 giri con la misura di batteria.
+Conseguenza di progetto: **il ciclo nativo è la visualizzazione predefinita** e il browser è il ripiego
+(`/panel.html` con meta refresh, tela 600x720). La voce **Avvia pannello (ciclo RTC)** è la prima del
+menu, **Ferma ciclo** la seconda; sotto stanno le voci diagnostiche (`Verifica server`, `Diagnostica`,
+`Inventario`, `Test immagini (eips)`, `Mostra panel.png`), che usano `eips` con immagini **8 bit** senza
+fermare il framework. Le voci Wi-Fi e RTC cambiano lo stato del device, e solo su scelta esplicita dal
+menu; anche `cycle` sospende a ogni giro, con lo stesso allarme armato prima di addormentare, quindi una
+scrittura fallita non lascia il device in standby. Il recupero è USB + `dashboard.log`. Le prove sono
+`images` (formati), `loop` (persistenza) e `cycle` (download + disegno + ripresa RTC: 3 giri e due run da
+20 giri completi il 2026-11-15). Resta da registrare la batteria prima/dopo di un run **con i download
+che riescono**, che è la misura che decide se il ciclo conviene al browser.
 
-Rapporto con le prove, fase per fase: `docs/kindle4-investigation.md` e `docs/kindle4-test-matrix.md`.
+Rapporto con le prove, fase per fase: `docs/kindle4-investigation.md`,
+`docs/kindle4-wifi-suspend-investigation.md` e `docs/kindle4-test-matrix.md`.
 Strumenti: `kindle/inspect_png.py` (formato/depth/interlace), `kindle/make_test_images.py` (scheda
 con timestamp + varianti in `cache/testimages`).
 
-Ancora da confermare: comportamento della batteria con la pagina aperta per ore.
+Ancora da confermare: comportamento della batteria con il pannello nativo per giorni e con la pagina
+aperta per ore.
 
 ## File → per chi
 
@@ -269,8 +289,9 @@ Ancora da confermare: comportamento della batteria con la pagina aperta per ore.
 | `docs/technical-walkthrough.md` | chi studia il progetto: percorso tecnico narrato, con i bug reali |
 | `docs/venv.md` | chi sviluppa e chi studia: cosa isola un venv, come crearlo, vantaggi e limiti (percorso didattico; il runtime principale è il container) |
 | `docs/docker.md` | chi esegue il pannello: percorso principale, scelte dell'immagine, volumi, comandi, rollback, trappole |
-| `docs/kindle4-investigation.md` | chi indaga sul percorso senza browser: architettura, prove, diagnosi, esperimenti |
-| `docs/kindle4-test-matrix.md` | chi verifica sul device: caso, stato, prova, limitazione per ogni fase |
+| `docs/kindle4-investigation.md` | chi indaga sul percorso senza browser: architettura, prove di disegno, diagnosi, esperimenti |
+| `docs/kindle4-wifi-suspend-investigation.md` | chi indaga su Wi-Fi, sospensione RTC e ciclo autonomo: meccanismi, prove, cosa resta da misurare |
+| `docs/kindle4-test-matrix.md` | chi verifica sul device: caso, stato, prova, limitazione per ogni fase (download, rendering, Wi-Fi, RTC, ciclo) |
 | `docs/preview.png` + `docs/make_preview.py` | chi scrive il README: anteprima versionata, rigenerata offline con dati inventati (`preview.png` invece è quella personale, ignorata da git) |
 | `config.example.toml` | utente: modello di configurazione commentato |
 | `tests/` | sviluppatori: comportamento atteso, da aggiornare con le modifiche |

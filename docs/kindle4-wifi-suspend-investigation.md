@@ -143,9 +143,39 @@ Prove brevi (23:46 e 23:50), con il Kindle staccato dalla USB:
 - fermate a mano dopo un giro, con `loop: fermato (pid …)`: lo stop uccide il processo prima della
   sospensione successiva.
 
-Conclusione: il ciclo da 20 giri **ha già funzionato per intero** una volta; il fallimento è isolato
-al tentativo con la USB del PC collegata. Manca la batteria prima/dopo di un run completo: va rifatto
-con caricatore e USB staccata, leggendo il log solo alla fine.
+Conclusione: il ciclo da 20 giri **ha funzionato per intero** quando il server rispondeva; il
+fallimento era isolato al tentativo con la USB del PC collegata. Manca la batteria prima/dopo di un run
+completo: va rifatto con caricatore e USB staccata, leggendo il log solo alla fine.
+
+#### E8.3 — Venti giri con l'indirizzo sbagliato (2026-11-24/25)
+
+Quattro run da 20 giri sono arrivati in fondo **senza aggiornare il pannello**: `HOST=` sul device era
+`192.168.1.14`, cioè il **PC di sviluppo**, dove non ascolta nessuno; il pannello gira sul server
+`192.168.1.187`, che invece stava rispondendo. Il log di ognuno è una ripetizione di:
+
+```
+2026-11-25T09:11:00 panel: download fallito (tengo l'ultimo panel.png)
+2026-11-25T09:11:00 cycle: aggiornato (giro 15)
+2026-11-25T09:11:15 cycle: sospensione 30 s        <- /next muto: ripiego
+2026-11-25T09:11:15 suspend_rtc: base=815067 wakealarm=815097 (tra 30 s), riletto=vuoto
+2026-11-25T09:11:46 suspend_rtc: risvegliato, uptime=656365.41 …
+```
+
+Fatti:
+
+- **20 giri raggiunti** (`cycle: raggiunto il limite di 20 giri`) con uptime continuo: la sospensione
+  RTC ha retto ~20 risvegli di fila anche in queste condizioni;
+- **zero download riusciti**: il pannello a schermo era quello del giorno prima;
+- cadenza di **30 s** invece di 90, perché il ripiego di `/next` era `LOOP_SECONDS`. Con un indirizzo
+  che non risponde il device si svegliava ogni 30 s per ore: proprio il consumo che il ciclo doveva
+  evitare.
+
+Correzioni (in `dashboard.sh.template`, non solo nei documenti): il ciclo conta i download falliti e
+dopo tre passa ad attese crescenti (300 → 600 → 1200 → 1800 s); il ripiego di `/next` è
+`[panel] refresh_seconds` (90 s), renderizzato da `deploy.ps1` come `REFRESH_SECONDS`; il prefisso di
+log di `update_panel` è passato da `loop:` a `panel:` (le righe storiche citate sopra restano quelle
+del log originale). `deploy.ps1` ora prova `http://<host>:<porta>/health` prima di scrivere, e
+`[server] device_host` fissa l'indirizzo invece di lasciarlo al DHCP.
 
 ## Vincoli di sicurezza
 
@@ -158,13 +188,14 @@ con caricatore e USB staccata, leggendo il log solo alla fine.
 ## Deliverable in questa branch
 
 - `docs/kindle4-wifi-suspend-investigation.md` (questo documento)
-- `docs/kindle4-wifi-suspend-test-matrix.md` (matrice analoga a quella del rendering)
-- Aggiornamenti a `dashboard.sh.template`: `wifi_off`, `wifi_on`, `wifi_cycle`, `suspend_rtc`, `resume_check`, `rtc_info`, `rtc_arm`, `rtc_cycle`, `cycle` (con lock pid)
-- Aggiornamenti a `menu.json`: voci per pilotare i test da KUAL
+- `docs/kindle4-test-matrix.md` (matrice unica: qui sono confluite le righe Wi-Fi/RTC/ciclo)
+- Aggiornamenti a `dashboard.sh.template`: `wifi_off`, `wifi_on`, `wifi_cycle`, `suspend_rtc`, `resume_check`, `rtc_info`, `rtc_arm`, `rtc_cycle`, `cycle` (lock pid, backoff, ripiego di cadenza)
+- Aggiornamenti a `menu.json`: voci per pilotare i test da KUAL, con il ciclo nativo in testa
 - Aggiornamenti a `README.md`, `AGENTS.md`, `.clinerules` per le nuove regole
 
 ---
 
-**Stato attuale**: E6, E7 ed E8 chiusi (Wi-Fi off/on, sospensione RTC, ciclo autonomo su 3 giri). Restano
-i **20 giri con la misura di batteria** (matrice C2) e la decisione se avviare il ciclo all'accensione:
-senza quelli il browser resta la visualizzazione predefinita.
+**Stato attuale**: E6, E7 ed E8 sono chiusi. Il ciclo nativo è la visualizzazione predefinita
+(`Avvia pannello (ciclo RTC)`); il browser resta il ripiego. Restano due cose, e sono misure, non
+decisioni: la **batteria prima/dopo** di un run da 20 giri con i download che riescono (matrice C2/C9)
+e il **backoff** con il server spento provato sul device (C10).

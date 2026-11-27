@@ -193,6 +193,27 @@ Errori realmente accaduti qui, da non ripetere:
     «permessi»). Due difese: `tests/test_kindle_scripts.py::test_function_braces_are_balanced` e
     `sh -n` sul file **renderizzato** in container prima di ogni deploy (`docker run --rm -v
     …:/w:ro nginx:alpine sh -n /w/render-check.sh`). Il gate pytest da solo non vede la sintassi sh.
+28. **Un ciclo «verde» può non aver aggiornato niente.** Il 2026-11-25 quattro `cycle 20` sono arrivati
+    in fondo con «raggiunto il limite di 20 giri» avendo avuto **venti `download fallito`** a testa: la
+    sospensione RTC era provata, il pannello no (e la cadenza era di 30 s perché anche `/next` taceva).
+    Prima di dichiarare riuscito un ciclo si **contano i download riusciti** nel log, non si guarda
+    l'exit code del ciclo. Nel codice: il ciclo conta i fallimenti e allunga l'attesa (300 → 600 → 1200
+    → 1800 s), e il ripiego di `/next` è `[panel] refresh_seconds` (90 s), non `LOOP_SECONDS`.
+29. **L'indirizzo del device è configurazione, non un IP da ricordare.** `HOST=` nel file generato è
+    cotto: con `192.168.1.14` (il PC di sviluppo, dove non ascolta nessuno) invece di `192.168.1.187`
+    (il server che fa girare il pannello) il device ha passato giorni su un'immagine vecchia, e il log
+    diceva solo `download fallito`. Ora `[server] device_host` è la fonte
+    (letta da `deploy.ps1` insieme a `port` e `[panel] refresh_seconds`), `-HostAddress` la vince, e il
+    deploy prova `http://<host>:<porta>/health` prima di scrivere: l'avviso si vede anche in `-DryRun`,
+    che è la domanda che conta. Resta vera la lezione 24: per indovinare un IP si chiede alla rotta, e
+    per non farlo cambiare si prenota nel router.
+30. **Un carattere «tipografico» dentro un `.ps1` rompe il parsing.** PowerShell 5.1 legge gli script
+    senza BOM come ANSI: una em dash UTF-8 (`—`, byte `E2 80 94`) diventa `â€”`, e l'ultimo byte è
+    U+201D, che il parser tratta come **virgoletta**. Il file smette di compilare con un errore che
+    punta decine di righe più in basso (`Carattere di terminazione mancante nella stringa`) e sembra un
+    problema di graffe. Negli script PowerShell: solo `-` e apostrofi dritti; se il parser accusa una
+    riga innocente, cercare i caratteri non-ASCII **prima** di sospettare le graffe. Corollario:
+    `"$name:"` va scritto `"${name}:"`, altrimenti è letto come variabile con drive (`$name:`).
 
 ## §Workflow
 
