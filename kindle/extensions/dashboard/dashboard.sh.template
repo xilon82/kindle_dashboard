@@ -11,10 +11,14 @@
 # addormenta nulla. Il canale di recupero e' USB + `dashboard.log`: con la radio spenta SSH non
 # risponde.
 #
-# File generato da deploy.ps1: i valori HOST e PORT arrivano da config.toml.
+# File generato da deploy.ps1: HOST, PORT e REFRESH_SECONDS arrivano da config.toml ([server] e
+# [panel] refresh_seconds). L'indirizzo del server non si scrive a mano qui: e' l'unico valore che,
+# sbagliato, lascia il device a scaricare nulla per giorni dicendo solo `download fallito`.
 
 HOST="__HOST__"
 PORT="__PORT__"
+# Cadenza diurna del pannello: il ciclo la usa quando `/next` non risponde.
+REFRESH_SECONDS="__REFRESH__"
 
 WORK_DIR="/mnt/us/dashboard"
 LOG="$WORK_DIR/dashboard.log"
@@ -24,6 +28,12 @@ PID_FILE="$WORK_DIR/dashboard.pid"
 STOP_FILE="$WORK_DIR/STOP"
 # 30 s: abbastanza per fermare il ciclo fra due disegni, abbastanza rado da non martellare le fonti.
 LOOP_SECONDS=30
+# Server irraggiungibile: dopo tre giri falliti l'attesa raddoppia (300 -> 600 -> 1200 -> 1800). Senza
+# questo, un server spento di notte tiene il device sveglio ogni 90 s per ore: e' successo davvero,
+# venti giri con venti `download fallito` e nessuna immagine nuova a schermo.
+FAILS_BEFORE_BACKOFF=3
+BACKOFF_START=300
+BACKOFF_MAX=1800
 # Il framebuffer e' 600x800, mentre la tela servita al browser e' 600x720 (barra degli indirizzi):
 # il client nativo chiede l'altezza piena, altrimenti gli ultimi 80 px restano quelli di KUAL.
 NATIVE_HEIGHT=800
@@ -157,17 +167,17 @@ update_panel() {
     tmp="$WORK_DIR/panel.new"
     if ! fetch_url "$(panel_url)" "$tmp"; then
         rm -f "$tmp"
-        log "loop: download fallito (tengo l'ultimo panel.png)"
+        log "panel: download fallito (tengo l'ultimo panel.png)"
         return 1
     fi
     size=$(wc -c <"$tmp")
     if [ "$size" -lt 1000 ] || ! is_png "$tmp"; then
         rm -f "$tmp"
-        log "loop: download non PNG ($size byte, tengo l'ultimo panel.png)"
+        log "panel: download non PNG ($size byte, tengo l'ultimo panel.png)"
         return 1
     fi
     mv "$tmp" "$WORK_DIR/panel.png"
-    log "loop: scaricato panel.png ($size byte)"
+    log "panel: scaricato panel.png ($size byte)"
     return 0
 }
 
@@ -198,7 +208,7 @@ check() {
     url="$(panel_url)"
     if ! fetch_url "$url" "$tmp"; then
         rm -f "$tmp"
-        log "check: FALLITO $url (PC spento, IP cambiato o firewall)"
+        log "check: FALLITO $url (server spento, indirizzo cambiato o firewall)"
         return 1
     fi
     size=$(wc -c <"$tmp")
@@ -429,7 +439,14 @@ start_cycle() {
     log "cycle: avvio (giri=$max_rounds, 0=infinito)"
     (
         trap 'rm -f "$PID_FILE"' 0
-        update_panel
+        # Il primo download vale come gli altri: se il server e' gia' giu' non serve aspettare tre
+        # giri per accorgersene.
+        if update_panel; then
+            fails=0
+        else
+            fails=1
+        fi
+        backoff=$BACKOFF_START
         for _ in 1 2 3; do
             draw_panel
             log "cycle: disegnato (warm-up)"
@@ -437,15 +454,30 @@ start_cycle() {
         done
         rounds=0
         while [ ! -f "$STOP_FILE" ]; do
-            wait_s="$(next_seconds)" || wait_s="$LOOP_SECONDS"
-            [ "$wait_s" -ge 5 ] 2>/dev/null || wait_s="$LOOP_SECONDS"
+            # La cadenza la decide il server. Se `/next` tace si usa quella diurna di config.toml
+            # (90 s), non i 30 s del ciclo di ripiego: una sospensione corta non aiuta nessuno.
+            wait_s="$(next_seconds)" || wait_s="$REFRESH_SECONDS"
+            [ "$wait_s" -ge 5 ] 2>/dev/null || wait_s="$REFRESH_SECONDS"
+            if [ "$fails" -ge "$FAILS_BEFORE_BACKOFF" ]; then
+                wait_s="$backoff"
+                log "cycle: $fails download falliti, sospensione $wait_s s (tetto $BACKOFF_MAX)"
+                if [ "$backoff" -lt "$BACKOFF_MAX" ]; then
+                    backoff=$((backoff * 2))
+                    [ "$backoff" -gt "$BACKOFF_MAX" ] && backoff=$BACKOFF_MAX
+                fi
+            fi
             log "cycle: sospensione $wait_s s"
             if ! suspend_rtc "$wait_s"; then
                 log "cycle: sospensione non riuscita, attendo con sleep"
                 sleep "$wait_s"
             fi
             [ -f "$STOP_FILE" ] && break
-            update_panel
+            if update_panel; then
+                fails=0
+                backoff=$BACKOFF_START
+            else
+                fails=$((fails + 1))
+            fi
             draw_panel
             rounds=$((rounds + 1))
             log "cycle: aggiornato (giro $rounds)"

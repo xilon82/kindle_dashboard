@@ -66,6 +66,33 @@ def test_invalid_port_is_rejected(tmp_path):
         load_config(write(tmp_path, MINIMAL + "\n[server]\nport = 99999\n"))
 
 
+def test_device_host_is_empty_by_default(tmp_path):
+    # Vuoto = comportamento storico: `deploy.ps1` prende l'IP della scheda della rotta di default.
+    assert load_config(write(tmp_path, MINIMAL)).server.device_host == ""
+
+
+def test_device_host_is_read_from_the_server_section(tmp_path):
+    text = MINIMAL + '\n[server]\ndevice_host = "192.168.1.14"\n'
+
+    assert load_config(write(tmp_path, text)).server.device_host == "192.168.1.14"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "http://192.168.1.14",  # schema: composto in un URL diventerebbe `http://http://...`
+        "192.168.1.14:8787",  # la porta è `[server] port`, non parte dell'indirizzo
+        "192.168.1.14/panel",  # percorso
+        "192.168.1.14 192.168.1.15",  # due indirizzi: serve un failover, non una stringa con uno spazio
+    ],
+)
+def test_device_host_must_be_a_bare_address(tmp_path, value):
+    text = MINIMAL + f'\n[server]\ndevice_host = "{value}"\n'
+
+    with pytest.raises(ConfigError, match="device_host"):
+        load_config(write(tmp_path, text))
+
+
 def test_ics_url_can_come_from_the_environment(tmp_path, monkeypatch):
     monkeypatch.setenv(ICS_URL_ENV, "https://calendar.example/private/basic.ics")
 

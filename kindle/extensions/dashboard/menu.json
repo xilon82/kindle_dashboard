@@ -1,32 +1,32 @@
 {
 	"items": [
 		{
-			"name": "Verifica server",
+			"name": "Avvia pannello (ciclo RTC)",
 			"priority": 1,
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "cycle",
+			"internal": "status Disegna, sospende con l'RTC per /next secondi, aggiorna al risveglio"
+		},
+		{
+			"name": "Ferma ciclo",
+			"priority": 2,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "stop",
+			"internal": "status Ferma il ciclo in background (immediato)"
+		},
+		{
+			"name": "Verifica server",
+			"priority": 3,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
 			"params": "check",
-			"internal": "status Prova di raggiungibilita' del PC"
+			"internal": "status Prova di raggiungibilita' del server"
 		},
 		{
 			"name": "Diagnostica",
-			"priority": 2,
+			"priority": 4,
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
 			"params": "diag",
 			"internal": "status Raccolta informazioni sul device"
-		},
-		{
-			"name": "Tieni schermo acceso",
-			"priority": 3,
-			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
-			"params": "awake",
-			"internal": "status Disattivo il salvascherino"
-		},
-		{
-			"name": "Riattiva salvascherino",
-			"priority": 4,
-			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
-			"params": "sleep",
-			"internal": "status Riattivo il salvascherino"
 		},
 		{
 			"name": "Inventario",
@@ -36,74 +36,74 @@
 			"internal": "status Raccoglie strumenti e stato del device (sola lettura)"
 		},
 		{
-			"name": "Test immagini (eips)",
-			"priority": 6,
-			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
-			"params": "images",
-			"internal": "status Disegna le varianti di formato della scheda di prova"
-		},
-		{
 			"name": "Mostra panel.png",
-			"priority": 7,
+			"priority": 6,
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
 			"params": "show",
 			"internal": "status Disegna l'ultimo panel.png scaricato"
 		},
 		{
-			"name": "Avvia ciclo (30s)",
+			"name": "Tieni schermo acceso",
+			"priority": 7,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "awake",
+			"internal": "status Disattivo il salvascherino"
+		},
+		{
+			"name": "Riattiva salvascherino",
 			"priority": 8,
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
-			"params": "loop",
-			"internal": "status Scarica e ridisegna il pannello in background ogni 30 secondi"
+			"params": "sleep",
+			"internal": "status Riattivo il salvascherino"
 		},
 		{
-			"name": "Ferma ciclo",
+			"name": "Ciclo di ripiego (30s)",
 			"priority": 9,
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
-			"params": "stop",
-			"internal": "status Ferma il ciclo in background"
+			"params": "loop",
+			"internal": "status Scarica e ridisegna il pannello ogni 30 secondi senza sospendere il device"
 		},
 		{
-			"name": "Wi-Fi off",
+			"name": "Test immagini (eips)",
 			"priority": 10,
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
-			"params": "wifi_off",
-			"internal": "status Spegne la radio Wi-Fi (wirelessEnable 0)"
+			"params": "images",
+			"internal": "status Disegna le varianti di formato della scheda di prova"
+		},
+		{
+			"name": "Test ciclo RTC (3 giri)",
+			"priority": 11,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "cycle 3",
+			"internal": "status Come Avvia pannello, ma si ferma da solo dopo 3 giri"
+		},
+		{
+			"name": "Test ciclo RTC (20 giri)",
+			"priority": 12,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "cycle 20",
+			"internal": "status Misura di autonomia: 20 giri da 90 s, circa 30 minuti"
 		},
 		{
 			"name": "Wi-Fi on",
-			"priority": 11,
+			"priority": 13,
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
 			"params": "wifi_on",
 			"internal": "status Riaccende la radio Wi-Fi (wirelessEnable 1) e aspetta CONNECTED"
 		},
 		{
+			"name": "Wi-Fi off",
+			"priority": 14,
+			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
+			"params": "wifi_off",
+			"internal": "status Spegne la radio Wi-Fi (wirelessEnable 0)"
+		},
+		{
 			"name": "Test Wi-Fi cycle",
-			"priority": 12,
+			"priority": 15,
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
 			"params": "wifi_cycle",
 			"internal": "status Spegne e riaccende il Wi-Fi misurando il tempo per tornare a CONNECTED"
-		},
-		{
-			"name": "Suspend RTC (60s)",
-			"priority": 13,
-			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
-			"params": "suspend_rtc 60",
-			"internal": "status Programma risveglio RTC tra 60 secondi e sospende il device"
-		},
-		{
-			"name": "Resume check",
-			"priority": 14,
-			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
-			"params": "resume_check",
-			"internal": "status Verifica che il device sia risvegliato correttamente"
-		},
-		{
-			"name": "Test RTC cycle (60s)",
-			"priority": 15,
-			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
-			"params": "rtc_cycle 60",
-			"internal": "status Programma risveglio RTC tra 60s e sospende (device si sveglia da solo)"
 		},
 		{
 			"name": "RTC info (sola lettura)",
@@ -120,25 +120,25 @@
 			"internal": "status Arma l'allarme a 120s e rilegge, senza sospendere"
 		},
 		{
-			"name": "Avvia ciclo RTC",
+			"name": "Suspend RTC (60s)",
 			"priority": 18,
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
-			"params": "cycle",
-			"internal": "status Disegna, sospende con l'RTC per /next secondi, aggiorna al risveglio"
+			"params": "suspend_rtc 60",
+			"internal": "status Programma risveglio RTC tra 60 secondi e sospende il device"
 		},
 		{
-			"name": "Test ciclo RTC (3 giri)",
+			"name": "Test RTC cycle (60s)",
 			"priority": 19,
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
-			"params": "cycle 3",
-			"internal": "status Come Avvia ciclo RTC, ma si ferma da solo dopo 3 giri"
+			"params": "rtc_cycle 60",
+			"internal": "status Programma risveglio RTC tra 60s e sospende (device si sveglia da solo)"
 		},
 		{
-			"name": "Test ciclo RTC (20 giri)",
+			"name": "Resume check",
 			"priority": 20,
 			"action": "/mnt/us/extensions/dashboard/dashboard.sh",
-			"params": "cycle 20",
-			"internal": "status Misura di autonomia: 20 giri da 90 s, circa 30 minuti"
+			"params": "resume_check",
+			"internal": "status Verifica che il device sia risvegliato correttamente"
 		}
 	]
 }
